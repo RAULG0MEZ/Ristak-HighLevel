@@ -335,6 +335,10 @@
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
+.importedCodeSourcePaneWithAssistant {
+  grid-template-rows: auto auto minmax(0, 1fr) auto minmax(188px, var(--imported-code-assistant-height, 286px));
+}
+
 .importedCodePreviewPane {
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -389,6 +393,13 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.importedCodeAssistantButton {
+  height: 30px;
+  min-height: 30px;
+  padding-inline: 10px;
+  white-space: nowrap;
 }
 
 .importedCodeDirtyStatus,
@@ -655,6 +666,208 @@
 
 :global(body.rstk-code-resizing) iframe {
   pointer-events: none;
+}
+
+:global(body.rstk-code-assistant-resizing) {
+  cursor: row-resize;
+  user-select: none;
+}
+
+:global(body.rstk-code-assistant-resizing) iframe {
+  pointer-events: none;
+}
+
+.importedCodeAssistantResizeHandle {
+  min-height: 12px;
+  display: grid;
+  place-items: center;
+  cursor: row-resize;
+  border-top: 1px solid color-mix(in srgb, var(--rstk-code-text) 10%, transparent);
+  background: var(--rstk-code-bg);
+}
+
+.importedCodeAssistantResizeHandle span {
+  width: 56px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rstk-code-muted) 42%, transparent);
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.importedCodeAssistantResizeHandle:hover span,
+.importedCodeAssistantResizeHandle:focus-visible span {
+  background: color-mix(in srgb, var(--rstk-code-tag) 70%, transparent);
+  transform: scaleY(1.35);
+}
+
+.importedCodeAssistantPanel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--rstk-code-text) 12%, transparent);
+  background: color-mix(in srgb, var(--rstk-code-bg) 92%, var(--rstk-code-text) 8%);
+  color: var(--rstk-code-text);
+  padding: 12px;
+  overflow: hidden;
+}
+
+.importedCodeAssistantHeader {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.importedCodeAssistantTitle {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.importedCodeAssistantTitle > svg {
+  flex: 0 0 auto;
+  color: var(--rstk-code-tag);
+}
+
+.importedCodeAssistantTitle div {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.importedCodeAssistantTitle span,
+.importedCodeAssistantModel span,
+.importedCodeAssistantMessage span {
+  color: var(--rstk-code-muted);
+  font-size: 0.68rem;
+  font-weight: 780;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.importedCodeAssistantTitle strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--rstk-code-text);
+  font-size: 0.82rem;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.importedCodeAssistantModel {
+  min-width: 210px;
+  display: grid;
+  gap: 4px;
+}
+
+.importedCodeAssistantModel :global(.customSelect),
+.importedCodeAssistantModel select {
+  min-height: 34px;
+}
+
+.importedCodeAssistantMessages {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
+}
+
+.importedCodeAssistantEmpty {
+  margin: 0;
+  color: var(--rstk-code-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.importedCodeAssistantMessage {
+  display: grid;
+  gap: 4px;
+  max-width: 92%;
+  border: 1px solid color-mix(in srgb, var(--rstk-code-text) 12%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.importedCodeAssistantMessage p {
+  margin: 0;
+  color: var(--rstk-code-text);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.importedCodeAssistantMessageUser {
+  justify-self: end;
+  background: color-mix(in srgb, var(--rstk-code-tag) 18%, var(--rstk-code-bg));
+}
+
+.importedCodeAssistantMessageAssistant {
+  justify-self: start;
+  background: color-mix(in srgb, var(--rstk-code-text) 7%, var(--rstk-code-bg));
+}
+
+.importedCodeAssistantComposer {
+  min-width: 0;
+  display: grid;
+}
+
+.importedCodeAssistantComposer textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: none;
+  border: 1px solid color-mix(in srgb, var(--rstk-code-text) 18%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--rstk-code-bg) 88%, #ffffff 12%);
+  color: var(--rstk-code-text);
+  padding: 10px 11px;
+  font: inherit;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  outline: none;
+}
+
+.importedCodeAssistantComposer textarea::placeholder {
+  color: color-mix(in srgb, var(--rstk-code-muted) 82%, transparent);
+}
+
+.importedCodeAssistantComposer textarea:focus {
+  border-color: color-mix(in srgb, var(--rstk-code-tag) 70%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rstk-code-tag) 22%, transparent);
+}
+
+.importedCodeAssistantFooter {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.importedCodeAssistantVoice.aiVoiceDictationActive {
+  flex: 1 1 220px;
+}
+
+.importedCodeAssistantVoice .aiVoiceMicButton {
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+}
+
+.importedCodeAssistantVoice .aiVoiceComposerInline {
+  min-height: 38px;
+  padding: 6px 9px;
+}
+
+.importedCodeAssistantVoice .aiCreationVoiceWaveform {
+  height: 22px;
 }
 
 .importedCodeSelectionNotice {

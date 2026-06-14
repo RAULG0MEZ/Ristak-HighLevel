@@ -3,6 +3,7 @@ import dns from 'node:dns/promises'
 import path from 'node:path'
 import JSZip from 'jszip'
 import fetch from 'node-fetch'
+import { Agent, Runner, OpenAIProvider } from '@openai/agents'
 import { db, getAppConfig, setAppConfig } from '../config/database.js'
 import { API_URLS } from '../config/constants.js'
 import { logger } from '../utils/logger.js'
@@ -5104,6 +5105,55 @@ async function callSitesAIJson({ apiKey, model, instructions, input, maxOutputTo
   return parseSitesAIJson(text)
 }
 
+function buildSitesAIAgentInputText(input = {}) {
+  const visualContext = normalizeSitesAIVisualContext(input?.visualContext)
+  const safeInput = {
+    ...input,
+    ...(visualContext
+      ? {
+        visualContext: {
+          ...visualContext,
+          screenshotDataUrl: visualContext.screenshotDataUrl
+            ? '[captura interna disponible; usa el resumen visual y el HTML como fuente de verdad]'
+            : ''
+        }
+      }
+      : {})
+  }
+  return JSON.stringify(safeInput)
+}
+
+async function callSitesAIJsonWithAgentSdk({ apiKey, model, instructions, input, maxOutputTokens = 7200, fallbackError = 'OpenAI no pudo generar el site', agentName = 'Editor HTML de Ristak' }) {
+  try {
+    const agent = new Agent({
+      name: agentName,
+      model: cleanString(model) || 'gpt-5.5',
+      instructions
+    })
+    const runner = new Runner({
+      modelProvider: new OpenAIProvider({ apiKey }),
+      tracingDisabled: true
+    })
+    const result = await runner.run(
+      agent,
+      [{ role: 'user', content: buildSitesAIAgentInputText(input) }],
+      { maxTurns: 4, context: { category: 'site_html_editor' } }
+    )
+    const output = String(result.finalOutput || '').trim()
+    return parseSitesAIJson(output)
+  } catch (error) {
+    logger.warn(`[Sites AI HTML edit] Agents SDK falló; usando Responses API como respaldo: ${error.message}`)
+    return callSitesAIJson({
+      apiKey,
+      model,
+      instructions,
+      input,
+      maxOutputTokens,
+      fallbackError
+    })
+  }
+}
+
 async function callSitesAIHtmlGenerator({ apiKey, model, siteKind, messages, agentConfig }) {
   return callSitesAIJson({
     apiKey,
@@ -5121,7 +5171,7 @@ async function callSitesAIHtmlGenerator({ apiKey, model, siteKind, messages, age
 
 async function callSitesAIHtmlEditor({ apiKey, model, siteKind, messages, agentConfig, site, importedSite, importedPages = [], visualContext = null, activePageId = '', aiRegionRequest = '' }) {
   const activePage = findImportedAIActivePageContext(importedPages, activePageId)
-  return callSitesAIJson({
+  return callSitesAIJsonWithAgentSdk({
     apiKey,
     model,
     instructions: buildSitesAIHtmlInstructions({ siteKind, agentConfig, editMode: true }),
@@ -5157,7 +5207,8 @@ async function callSitesAIHtmlEditor({ apiKey, model, siteKind, messages, agentC
       conversation: messages
     },
     maxOutputTokens: 30000,
-    fallbackError: 'OpenAI no pudo editar el HTML'
+    fallbackError: 'OpenAI no pudo editar el HTML',
+    agentName: 'Asistente AI del editor HTML'
   })
 }
 
@@ -7979,6 +8030,112 @@ function logSitesAIEditDebug(debug = {}, event = 'step', extra = {}) {
   })
 }
 
+const SITES_AI_DRAFT_HTML_MAX_CHARS = 750000
+
+function getSitesAIDraftHtmlInput(input = {}) {
+  const rawValue = input.currentHtml ?? input.current_html ?? input.draftHtml ?? input.draft_html
+  if (typeof rawValue !== 'string') return ''
+  const trimmed = rawValue.trim()
+  if (!trimmed) return ''
+  return rawValue.length > SITES_AI_DRAFT_HTML_MAX_CHARS
+    ? rawValue.slice(0, SITES_AI_DRAFT_HTML_MAX_CHARS)
+    : rawValue
+}
+
+function getSitesAIDraftFilePathInput(input = {}) {
+  return cleanString(input.currentFilePath || input.current_file_path || input.currentFilename || input.current_filename)
+}
+
+function shouldReturnSitesAIDraft(input = {}) {
+  return normalizeBoolean(input.draftOnly || input.draft_only || input.returnDraft || input.return_draft) === 1
+}
+
+function applySitesAIDraftHtmlToContext({ currentImport = {}, importedPages = [], activePageId = '', currentHtml = '', currentFilePath = '' } = {}) {
+  if (!currentHtml) {
+    return {
+      currentImport,
+      importedPages
+    }
+  }
+
+  const cleanActivePageId = cleanString(activePageId)
+  const cleanFilePath = cleanString(currentFilePath)
+  let replacedPage = false
+  const nextPages = Array.isArray(importedPages)
+    ? importedPages.map((page, index) => {
+      const isMatch = (
+        (cleanActivePageId && (
+          cleanString(page.id) === cleanActivePageId ||
+          cleanString(page.filename) === cleanActivePageId
+        )) ||
+        (cleanFilePath && cleanString(page.filename) === cleanFilePath) ||
+        (!cleanActivePageId && !cleanFilePath && index === 0)
+      )
+      if (!isMatch) return page
+      replacedPage = true
+      return {
+        ...page,
+        filename: page.filename || cleanFilePath || currentImport.originalFilename || '',
+        html: currentHtml
+      }
+    })
+    : []
+
+  const shouldPatchMainImport = !nextPages.length || nextPages.length === 1 || !replacedPage
+  return {
+    currentImport: shouldPatchMainImport
+      ? {
+        ...currentImport,
+        htmlOriginal: currentHtml,
+        htmlSanitized: currentHtml
+      }
+      : currentImport,
+    importedPages: replacedPage
+      ? nextPages
+      : nextPages.length
+        ? nextPages
+        : [{
+          id: cleanActivePageId || DEFAULT_FUNNEL_PAGE_ID,
+          title: 'Página actual',
+          filename: cleanFilePath || currentImport.originalFilename || '',
+          html: currentHtml
+        }]
+  }
+}
+
+function getSitesAIDraftHtmlFromPagePayload(page = {}, currentImport = {}, importedPages = [], activePageId = '') {
+  if (Array.isArray(page.pages) && page.pages.length) {
+    const activePage = findImportedAIActivePageContext(page.pages, activePageId) || page.pages[0]
+    return String(activePage?.html || page.html || currentImport.htmlSanitized || currentImport.htmlOriginal || '')
+  }
+
+  if (cleanString(page.html)) return String(page.html || '')
+
+  const activePage = findImportedAIActivePageContext(importedPages, activePageId)
+  return String(activePage?.html || currentImport.htmlSanitized || currentImport.htmlOriginal || '')
+}
+
+function getSitesAIDraftPagesFromPagePayload(page = {}) {
+  if (!Array.isArray(page.pages) || !page.pages.length) return []
+  return page.pages.map(nextPage => ({
+    id: cleanString(nextPage.id),
+    title: cleanString(nextPage.title),
+    filename: cleanString(nextPage.filename),
+    html: String(nextPage.html || '')
+  }))
+}
+
+function buildSitesAIDraftOnlyUpdateResponse({ page = {}, currentImport = {}, importedPages = [], activePageId = '', reply = '', debug = null } = {}) {
+  const response = {
+    status: 'updated',
+    reply: limitString(reply, 1000) || 'Listo, el asistente preparó el cambio en el borrador del HTML.',
+    draftHtml: getSitesAIDraftHtmlFromPagePayload(page, currentImport, importedPages, activePageId),
+    draftPages: getSitesAIDraftPagesFromPagePayload(page)
+  }
+  if (debug) response.debug = getSitesAIEditDebugPayload(debug)
+  return response
+}
+
 export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   const traceId = crypto.randomUUID()
   const currentSite = await getSite(siteId, { includeBlocks: true, includeSubmissions: true })
@@ -8007,9 +8164,21 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
 
   const agentConfig = await getAIAgentConfig({ userId: input.userId })
   const model = normalizeSitesAIModel(input.model || input.chatgptModel || input.chatgpt_model, agentConfig?.model)
-  const importedPages = await getImportedSitePagesForAIContext(currentSite, currentImport)
   const visualContext = normalizeSitesAIVisualContext(input.visualContext || input.visual_context)
   const activePageId = getImportedAIActivePageId(input, visualContext)
+  const draftOnly = shouldReturnSitesAIDraft(input)
+  const draftHtml = getSitesAIDraftHtmlInput(input)
+  const draftFilePath = getSitesAIDraftFilePathInput(input)
+  const initialImportedPages = await getImportedSitePagesForAIContext(currentSite, currentImport)
+  const draftContext = applySitesAIDraftHtmlToContext({
+    currentImport,
+    importedPages: initialImportedPages,
+    activePageId,
+    currentHtml: draftHtml,
+    currentFilePath: draftFilePath
+  })
+  const currentImportForAI = draftContext.currentImport
+  const importedPages = draftContext.importedPages
   const promptText = getSitesAIConversationText(messages)
   const operationalPromptText = buildImportedAIRegionOperationalPromptText(promptText, aiRegionRequest)
   const hasSelectedRegionHints = parseImportedAIRegionElementHints(operationalPromptText).length > 0
@@ -8026,9 +8195,18 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   addSitesAIEditDebugStep(debug, `Inicio de edición IA para página ${activePageId || 'activa'} con ${debug.selectedElements} elementos visuales.`)
   logSitesAIEditDebug(debug, 'request_started')
 
-  const agentImportedPages = await getImportedSitePagesForAIContext(currentSite, currentImport, { htmlLimit: 0 })
-  const agentResult = buildImportedAIRegionAgentPageResult({
+  const initialAgentImportedPages = await getImportedSitePagesForAIContext(currentSite, currentImport, { htmlLimit: 0 })
+  const agentDraftContext = applySitesAIDraftHtmlToContext({
     currentImport,
+    importedPages: initialAgentImportedPages,
+    activePageId,
+    currentHtml: draftHtml,
+    currentFilePath: draftFilePath
+  })
+  const agentImportedPages = agentDraftContext.importedPages
+  const agentCurrentImport = agentDraftContext.currentImport
+  const agentResult = buildImportedAIRegionAgentPageResult({
+    currentImport: agentCurrentImport,
     importedPages: agentImportedPages.length ? agentImportedPages : importedPages,
     activePageId,
     promptText: operationalPromptText,
@@ -8048,6 +8226,20 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   }
 
   if (agentResult.page) {
+    if (draftOnly) {
+      debug.finalStatus = 'draft_updated_with_site_agent'
+      addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador aplicado por el agente interno.')
+      logSitesAIEditDebug(debug, 'draft_updated_with_site_agent')
+      return buildSitesAIDraftOnlyUpdateResponse({
+        page: agentResult.page,
+        currentImport: currentImportForAI,
+        importedPages,
+        activePageId,
+        reply: agentResult.reason || 'Ristak aplicó el cambio con el agente interno del editor.',
+        debug
+      })
+    }
+
     const result = await replaceImportedSiteHtml(siteId, {
       html: agentResult.page.html,
       pages: agentResult.page.pages,
@@ -8090,7 +8282,7 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
       messages,
       agentConfig,
       site: currentSite,
-      importedSite: currentImport,
+      importedSite: currentImportForAI,
       importedPages,
       visualContext,
       activePageId,
@@ -8114,21 +8306,33 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   const shouldMergeSingleActivePage = !aiPageHasPages && importedPages.length > 1 && Boolean(cleanString(aiPage.html))
   const shouldMergePartialPages = aiPageHasPages && importedPages.length > aiPage.pages.length
   const mergeImportedPages = shouldMergeSingleActivePage || shouldMergePartialPages
-    ? await getImportedSitePagesForAIContext(currentSite, currentImport, { htmlLimit: 0 })
+    ? applySitesAIDraftHtmlToContext({
+      currentImport,
+      importedPages: await getImportedSitePagesForAIContext(currentSite, currentImport, { htmlLimit: 0 }),
+      activePageId,
+      currentHtml: draftHtml,
+      currentFilePath: draftFilePath
+    }).importedPages
     : importedPages
   const page = normalizeImportedAIHtmlPageForActivePage(
     aiPage,
-    currentImport,
+    currentImportForAI,
     mergeImportedPages,
     activePageId
   )
-  const changedByAI = didAIChangeImportedHtml(page, currentImport, mergeImportedPages)
+  const changedByAI = didAIChangeImportedHtml(page, currentImportForAI, mergeImportedPages)
 
   if (hasSelectedRegionHints && (shouldApplyImportedAIRegionCenteredLayoutFallback(operationalPromptText) || shouldApplyImportedAIRegionVideoOnlyFallback(operationalPromptText))) {
     debug.fallbackAttempted = true
-    const layoutFallbackPages = await getImportedSitePagesForAIContext(currentSite, currentImport, { htmlLimit: 0 })
-    const layoutFallbackResult = buildImportedAIRegionFallbackPageResult({
+    const layoutFallbackPages = applySitesAIDraftHtmlToContext({
       currentImport,
+      importedPages: await getImportedSitePagesForAIContext(currentSite, currentImport, { htmlLimit: 0 }),
+      activePageId,
+      currentHtml: draftHtml,
+      currentFilePath: draftFilePath
+    }).importedPages
+    const layoutFallbackResult = buildImportedAIRegionFallbackPageResult({
+      currentImport: currentImportForAI,
       importedPages: layoutFallbackPages.length ? layoutFallbackPages : mergeImportedPages,
       activePageId,
       promptText: operationalPromptText,
@@ -8136,7 +8340,23 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     })
     const layoutFallbackPage = layoutFallbackResult.page
 
-    if (layoutFallbackPage && didAIChangeImportedHtml(layoutFallbackPage, currentImport, layoutFallbackPages.length ? layoutFallbackPages : mergeImportedPages)) {
+    if (layoutFallbackPage && didAIChangeImportedHtml(layoutFallbackPage, currentImportForAI, layoutFallbackPages.length ? layoutFallbackPages : mergeImportedPages)) {
+      if (draftOnly) {
+        debug.finalStatus = 'draft_updated_with_layout_fallback'
+        addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador aplicado por fallback de layout.')
+        logSitesAIEditDebug(debug, 'draft_updated_with_layout_fallback')
+        return buildSitesAIDraftOnlyUpdateResponse({
+          page: layoutFallbackPage,
+          currentImport: currentImportForAI,
+          importedPages: layoutFallbackPages.length ? layoutFallbackPages : mergeImportedPages,
+          activePageId,
+          reply: layoutFallbackResult.type === 'video_only'
+            ? 'Ristak dejó solo el video grande y centrado en la zona seleccionada.'
+            : 'Ristak aplicó el reordenamiento de la zona seleccionada: titular, subtítulo, video y botón.',
+          debug
+        })
+      }
+
       const layoutResult = await replaceImportedSiteHtml(siteId, {
         html: layoutFallbackPage.html,
         pages: layoutFallbackPage.pages,
@@ -8165,14 +8385,30 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
         ? mergeImportedPages
         : importedPages
       const fallbackResultPage = buildImportedAIRegionFallbackPageResult({
-        currentImport,
+        currentImport: currentImportForAI,
         importedPages: fallbackImportedPages,
         activePageId,
         promptText: operationalPromptText,
         siteKind
       })
       const fallbackPage = fallbackResultPage.page
-      if (fallbackPage && didAIChangeImportedHtml(fallbackPage, currentImport, fallbackImportedPages)) {
+      if (fallbackPage && didAIChangeImportedHtml(fallbackPage, currentImportForAI, fallbackImportedPages)) {
+        if (draftOnly) {
+          debug.finalStatus = 'draft_updated_with_fallback'
+          addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador aplicado por fallback.')
+          logSitesAIEditDebug(debug, 'draft_updated_with_fallback')
+          return buildSitesAIDraftOnlyUpdateResponse({
+            page: fallbackPage,
+            currentImport: currentImportForAI,
+            importedPages: fallbackImportedPages,
+            activePageId,
+            reply: fallbackResultPage.type === 'video_only'
+              ? 'La IA no hizo cambios visibles, así que Ristak dejó solo el video grande y centrado en la zona seleccionada.'
+              : 'La IA no hizo cambios visibles, así que Ristak aplicó el ajuste de layout en la zona seleccionada.',
+            debug
+          })
+        }
+
         const fallbackResult = await replaceImportedSiteHtml(siteId, {
           html: fallbackPage.html,
           pages: fallbackPage.pages,
@@ -8197,6 +8433,20 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
         ? 'La IA devolvio el mismo HTML sin cambios visibles. Reintenta indicando exactamente que debe cambiar en la zona seleccionada.'
         : 'La IA devolvio el mismo HTML sin cambios visibles. Reintenta indicando exactamente que debe cambiar en la página.'
     }
+  }
+
+  if (draftOnly) {
+    debug.finalStatus = 'draft_updated_with_ai'
+    addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador generado por la IA sin guardar en base de datos.')
+    logSitesAIEditDebug(debug, 'draft_updated_with_ai')
+    return buildSitesAIDraftOnlyUpdateResponse({
+      page,
+      currentImport: currentImportForAI,
+      importedPages: mergeImportedPages,
+      activePageId,
+      reply: limitString(aiPayload?.reply, 1000) || 'Listo, actualice el HTML del borrador.',
+      debug
+    })
   }
 
   const result = await replaceImportedSiteHtml(siteId, {

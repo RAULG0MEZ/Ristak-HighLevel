@@ -535,6 +535,8 @@ export interface SitesAICreationResult {
   reply: string
   site?: PublicSite
   import?: ImportedSiteImport
+  draftHtml?: string
+  draftPages?: Array<{ id?: string; title?: string; filename?: string; html: string }>
   reason?: 'selection_target_missing'
   debug?: SitesAIEditDebug
 }
@@ -656,7 +658,7 @@ export const sitesService = {
     return apiClient.post<SitesAICreationResult>('/sites/ai-create-html', payload)
   },
 
-  editImportedHtmlWithAI(siteId: string, payload: { siteKind: SitesAICreationKind; messages: SitesAICreationMessage[]; model?: string; visualContext?: SitesAIPreviewVisualContext | null; pageId?: string; aiRegionRequest?: string }) {
+  editImportedHtmlWithAI(siteId: string, payload: { siteKind: SitesAICreationKind; messages: SitesAICreationMessage[]; model?: string; visualContext?: SitesAIPreviewVisualContext | null; pageId?: string; aiRegionRequest?: string; draftOnly?: boolean; currentHtml?: string; currentFilePath?: string }) {
     return apiClient.post<SitesAICreationResult>(`/sites/${siteId}/ai-edit-html`, payload)
   },
 

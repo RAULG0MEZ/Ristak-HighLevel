@@ -9292,6 +9292,13 @@ type ImportedAIRegionAttempt = {
   debug?: SitesAIEditDebug
 }
 
+type ImportedCodeAssistantMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  debug?: SitesAIEditDebug
+}
+
 type ImportedButtonEditorState = {
   selection: ImportedEditableSelection
   value: string
@@ -12413,6 +12420,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   const codeSplitRef = useRef<HTMLDivElement | null>(null)
   const codeHighlightRef = useRef<HTMLPreElement | null>(null)
   const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const codeAssistantHeightRef = useRef(286)
   const selectedIframeElementRef = useRef<HTMLElement | null>(null)
   const selectedCodePreviewElementRef = useRef<HTMLElement | null>(null)
   const elementPopoverRef = useRef<HTMLDivElement | null>(null)
@@ -12446,6 +12454,13 @@ const ImportedHtmlEditorPanel: React.FC<{
   const codeEditorWidthRef = useRef(50)
   const [codeEditorTheme, setCodeEditorTheme] = useState<ImportedCodeTheme>('dark')
   const [codeSelectionNotice, setCodeSelectionNotice] = useState('')
+  const [codeAssistantOpen, setCodeAssistantOpen] = useState(false)
+  const [codeAssistantPrompt, setCodeAssistantPrompt] = useState('')
+  const [codeAssistantModel, setCodeAssistantModel] = useState(getDefaultSiteChatGPTModel(true))
+  const [codeAssistantMessages, setCodeAssistantMessages] = useState<ImportedCodeAssistantMessage[]>([])
+  const [codeAssistantSaving, setCodeAssistantSaving] = useState(false)
+  const [codeAssistantError, setCodeAssistantError] = useState('')
+  const [codeAssistantHeight, setCodeAssistantHeight] = useState(286)
   const importedPages = pages.length ? pages : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Página 1', sortOrder: 0 }]
   const activeImportedPage = importedPages.find(page => page.id === activePageId) || importedPages[0]
   const codeFiles = useMemo<ImportedSiteCodeFile[]>(() => {
@@ -12549,6 +12564,14 @@ const ImportedHtmlEditorPanel: React.FC<{
     onError: setAiRegionError,
     onStart: () => setAiRegionError('')
   })
+  const appendCodeAssistantPromptText = useCallback((text: string) => {
+    setCodeAssistantPrompt(current => appendDictatedText(current, text))
+  }, [])
+  const codeAssistantVoiceDictation = useAIVoiceDictation({
+    onTranscription: appendCodeAssistantPromptText,
+    onError: setCodeAssistantError,
+    onStart: () => setCodeAssistantError('')
+  })
   const syncCodeHighlightScroll = useCallback((event: React.UIEvent<HTMLTextAreaElement>) => {
     const highlight = codeHighlightRef.current
     if (!highlight) return
@@ -12604,6 +12627,48 @@ const ImportedHtmlEditorPanel: React.FC<{
   }, [codeEditorWidth])
 
   useEffect(() => {
+    codeAssistantHeightRef.current = codeAssistantHeight
+  }, [codeAssistantHeight])
+
+  const handleCodeAssistantResizePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startY = event.clientY
+    const startHeight = codeAssistantHeightRef.current
+    let frame = 0
+    let latestHeight = startHeight
+
+    const updateHeight = (clientY: number) => {
+      latestHeight = Math.min(540, Math.max(188, startHeight - (clientY - startY)))
+      if (frame) return
+      frame = window.requestAnimationFrame(() => {
+        frame = 0
+        setCodeAssistantHeight(latestHeight)
+      })
+    }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault()
+      updateHeight(moveEvent.clientY)
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      if (frame) {
+        window.cancelAnimationFrame(frame)
+        frame = 0
+      }
+      codeAssistantHeightRef.current = latestHeight
+      setCodeAssistantHeight(latestHeight)
+      document.body.classList.remove('rstk-code-assistant-resizing')
+    }
+
+    document.body.classList.add('rstk-code-assistant-resizing')
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+  }, [])
+
+  useEffect(() => {
     if (!routeEditing) setRouteDraft(getRouteEditorValue(site))
   }, [routeEditing, site.id, site.slug])
 
@@ -12647,9 +12712,11 @@ const ImportedHtmlEditorPanel: React.FC<{
     setAiRegionError('')
     setAiRegionLastAttempt(null)
     aiRegionVoiceDictation.cancelVoice()
+    codeAssistantVoiceDictation.cancelVoice()
+    setCodeAssistantError('')
     setFieldEditor(null)
     setContentError('')
-  }, [activeImportedPage?.id, aiRegionVoiceDictation.cancelVoice, site.id])
+  }, [activeImportedPage?.id, aiRegionVoiceDictation.cancelVoice, codeAssistantVoiceDictation.cancelVoice, site.id])
 
   useEffect(() => {
     selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
@@ -13208,6 +13275,130 @@ const ImportedHtmlEditorPanel: React.FC<{
       })
     } finally {
       setAiRegionSaving(false)
+    }
+  }
+
+  const applyCodeAssistantEdit = async () => {
+    const prompt = codeAssistantPrompt.trim()
+    if (!activeCodeFile) {
+      setCodeAssistantError('No hay un archivo HTML activo para editar.')
+      return
+    }
+    if (!prompt) {
+      setCodeAssistantError('Dime qué quieres cambiar en este HTML.')
+      return
+    }
+
+    const activePageId = activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID
+    const fullPageVisualContext = previewVisualContextRef.current?.siteId === site.id &&
+      previewVisualContextRef.current?.pageId === activePageId
+      ? previewVisualContextRef.current
+      : null
+    const selectedRange = buttonEditor?.selection.codeRange || codeElementEditor?.range || null
+    const selectedSnippet = selectedRange
+      ? activeCodeValue.slice(selectedRange.start, selectedRange.end).slice(0, 9000)
+      : ''
+    const selectedContext = selectedRange
+      ? [
+        `Elemento seleccionado en vista previa: ${selectedRange.label}.`,
+        `Linea aproximada: ${selectedRange.line}.`,
+        `HTML del elemento o contenedor seleccionado:\n${selectedSnippet}`
+      ].join('\n')
+      : codeSelectionNotice
+        ? `Elemento seleccionado en vista previa: ${codeSelectionNotice}.`
+        : 'No hay elemento seleccionado; aplica el cambio a la página activa solo si la instrucción lo pide.'
+    const assistantInstruction = [
+      'Eres el Asistente AI quirúrgico del editor HTML de Ristak.',
+      'Edita el HTML actual que Ristak te manda como currentHtml. No reconstruyas toda la página salvo que el usuario lo pida de forma explícita.',
+      'Si el usuario menciona "este", "ese botón", "este campo" o una sección seleccionada, usa primero el contexto del elemento seleccionado.',
+      'Conserva scripts de Ristak, atributos data-rstk/data-ristak, formularios, tracking y acciones existentes salvo que el usuario pida cambiarlos.',
+      `Archivo activo: ${activeCodeFile.label || activeCodeFile.path || 'HTML principal'}.`,
+      `Página activa: ${activeImportedPage?.title || 'Página actual'}.`,
+      selectedContext,
+      `Solicitud del usuario: ${prompt}`
+    ].join('\n\n')
+    const userMessage: ImportedCodeAssistantMessage = {
+      id: makeAICreationId(),
+      role: 'user',
+      content: prompt
+    }
+
+    setCodeAssistantSaving(true)
+    setCodeAssistantError('')
+    setCodeAssistantMessages(current => [...current.slice(-8), userMessage])
+
+    try {
+      const result = await sitesService.editImportedHtmlWithAI(site.id, {
+        siteKind: getAIAgentSiteKindForSite(site),
+        model: codeAssistantModel,
+        pageId: activePageId,
+        visualContext: fullPageVisualContext,
+        aiRegionRequest: prompt,
+        draftOnly: true,
+        currentHtml: activeCodeValue,
+        currentFilePath: activeCodeFile.path || activeCodeFile.label || '',
+        messages: [
+          ...codeAssistantMessages.slice(-6).map(message => ({
+            role: message.role,
+            content: message.content
+          } satisfies SitesAICreationMessage)),
+          {
+            role: 'user',
+            content: assistantInstruction
+          }
+        ]
+      })
+
+      const draftPage = result.draftPages?.find(page => (
+        page.id === activePageId ||
+        page.filename === activeCodeFile.path ||
+        page.filename === activeCodeFile.label
+      ))
+      const nextHtml = result.draftHtml || draftPage?.html || ''
+      if (result.status === 'needs_more_info' || !nextHtml.trim()) {
+        const message = result.reply || 'El asistente necesita más detalle para aplicar el cambio.'
+        setCodeAssistantError(message)
+        setCodeAssistantMessages(current => [...current, {
+          id: makeAICreationId(),
+          role: 'assistant',
+          content: message,
+          debug: result.debug
+        }])
+        return
+      }
+
+      if (normalizeImportedAIRegionPreviewHtml(nextHtml) === normalizeImportedAIRegionPreviewHtml(activeCodeValue)) {
+        const message = result.reply || 'El asistente respondió, pero no cambió el HTML visible. Intenta pedir el ajuste con más precisión.'
+        setCodeAssistantError(message)
+        setCodeAssistantMessages(current => [...current, {
+          id: makeAICreationId(),
+          role: 'assistant',
+          content: message,
+          debug: result.debug
+        }])
+        return
+      }
+
+      onCodeDraftChange(activeCodeFile.path, nextHtml, activeCodeFile.content)
+      setCodeAssistantPrompt('')
+      const assistantReply = result.reply || 'Listo, apliqué el cambio en el borrador del HTML. Revisa la vista previa y guarda cuando esté correcto.'
+      setCodeAssistantMessages(current => [...current, {
+        id: makeAICreationId(),
+        role: 'assistant',
+        content: assistantReply,
+        debug: result.debug
+      }])
+      showToast('success', 'Cambio preparado', 'El asistente editó el HTML como borrador. Guarda el sitio para aplicarlo.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No se pudo editar el HTML con el asistente.'
+      setCodeAssistantError(message)
+      setCodeAssistantMessages(current => [...current, {
+        id: makeAICreationId(),
+        role: 'assistant',
+        content: message
+      }])
+    } finally {
+      setCodeAssistantSaving(false)
     }
   }
 
@@ -14495,10 +14686,13 @@ const ImportedHtmlEditorPanel: React.FC<{
       setCodeElementEditor(null)
       setElementPopoverPosition(null)
       setContentError('')
+      setCodeAssistantOpen(false)
+      setCodeAssistantError('')
+      codeAssistantVoiceDictation.cancelVoice()
       selectedCodePreviewElementRef.current?.classList.remove('rstk-imported-code-selected')
       selectedCodePreviewElementRef.current = null
     }
-  }, [codeEditorOpen])
+  }, [codeAssistantVoiceDictation.cancelVoice, codeEditorOpen])
 
   useEffect(() => {
     if (!codeEditorOpen || !activeCodePreviewHtml) return
@@ -14640,7 +14834,10 @@ const ImportedHtmlEditorPanel: React.FC<{
         className={styles.importedCodeEditorPanel}
         style={{ '--imported-code-source-width': `${codeEditorWidth}%` } as React.CSSProperties}
       >
-        <section className={`${styles.importedCodeSourcePane} ${codeEditorTheme === 'dark' ? styles.importedCodeSourcePaneDark : styles.importedCodeSourcePaneLight} ${activeCodeDiagnostics.length ? styles.importedCodeSourcePaneInvalid : ''}`}>
+        <section
+          className={`${styles.importedCodeSourcePane} ${codeAssistantOpen ? styles.importedCodeSourcePaneWithAssistant : ''} ${codeEditorTheme === 'dark' ? styles.importedCodeSourcePaneDark : styles.importedCodeSourcePaneLight} ${activeCodeDiagnostics.length ? styles.importedCodeSourcePaneInvalid : ''}`}
+          style={{ '--imported-code-assistant-height': `${codeAssistantHeight}px` } as React.CSSProperties}
+        >
           <div className={styles.importedCodePaneHeader}>
             <div className={styles.importedCodeTitleBlock}>
               <span>Editor HTML</span>
@@ -14653,6 +14850,21 @@ const ImportedHtmlEditorPanel: React.FC<{
                   {activeCodeDiagnostics[0]}
                 </span>
               )}
+              <Button
+                type="button"
+                variant={codeAssistantOpen ? 'primary' : 'secondary'}
+                size="sm"
+                className={styles.importedCodeAssistantButton}
+                onClick={() => {
+                  setCodeAssistantOpen(current => !current)
+                  setCodeAssistantError('')
+                }}
+                disabled={!aiAgentAvailable}
+                title={aiAgentAvailable ? 'Abrir asistente AI del código' : 'Configura OpenAI en Agente AI para usar el asistente'}
+              >
+                <Sparkles size={14} />
+                Asistente AI
+              </Button>
               <strong className={activeCodeDirty ? styles.importedCodeDirtyStatus : styles.importedCodeSavedStatus}>
                 {activeCodeDirty ? 'Cambios sin guardar' : 'Guardado'}
               </strong>
@@ -14715,6 +14927,117 @@ const ImportedHtmlEditorPanel: React.FC<{
               <Code2 size={18} />
               <span>No hay HTML editable para esta página.</span>
             </div>
+          )}
+          {codeAssistantOpen && (
+            <>
+              <div
+                className={styles.importedCodeAssistantResizeHandle}
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Cambiar altura del asistente AI"
+                tabIndex={0}
+                onPointerDown={handleCodeAssistantResizePointerDown}
+                onDoubleClick={() => setCodeAssistantHeight(286)}
+                onKeyDown={(event) => {
+                  if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+                  event.preventDefault()
+                  if (event.key === 'ArrowUp') setCodeAssistantHeight(current => Math.min(540, current + 24))
+                  if (event.key === 'ArrowDown') setCodeAssistantHeight(current => Math.max(188, current - 24))
+                  if (event.key === 'Home') setCodeAssistantHeight(188)
+                  if (event.key === 'End') setCodeAssistantHeight(540)
+                }}
+              >
+                <span />
+              </div>
+              <div className={styles.importedCodeAssistantPanel}>
+                <div className={styles.importedCodeAssistantHeader}>
+                  <div className={styles.importedCodeAssistantTitle}>
+                    <Sparkles size={16} />
+                    <div>
+                      <span>Asistente AI</span>
+                      <strong>Edita quirúrgicamente el HTML activo</strong>
+                    </div>
+                  </div>
+                  <label className={styles.importedCodeAssistantModel}>
+                    <span>Modelo</span>
+                    <CustomSelect
+                      value={codeAssistantModel}
+                      portal
+                      disabled={codeAssistantSaving}
+                      onChange={(event) => setCodeAssistantModel(event.target.value)}
+                    >
+                      {chatgptSiteModelOptions.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </CustomSelect>
+                  </label>
+                </div>
+                <div className={styles.importedCodeAssistantMessages} aria-live="polite">
+                  {codeAssistantMessages.length ? (
+                    codeAssistantMessages.slice(-6).map(message => (
+                      <div
+                        key={message.id}
+                        className={`${styles.importedCodeAssistantMessage} ${message.role === 'user' ? styles.importedCodeAssistantMessageUser : styles.importedCodeAssistantMessageAssistant}`}
+                      >
+                        <span>{message.role === 'user' ? 'Tú' : 'Asistente'}</span>
+                        <p>{message.content}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className={styles.importedCodeAssistantEmpty}>
+                      Selecciona algo en la vista o escribe directo qué quieres cambiar: título, botón, campo, sección o toda la página.
+                    </p>
+                  )}
+                </div>
+                {codeAssistantError && (
+                  <div className={styles.importedAIRegionError}>
+                    <AlertTriangle size={14} />
+                    <span>{codeAssistantError}</span>
+                  </div>
+                )}
+                <label className={styles.importedCodeAssistantComposer}>
+                  <textarea
+                    rows={3}
+                    value={codeAssistantPrompt}
+                    disabled={codeAssistantSaving}
+                    placeholder="Ejemplo: cambia el texto del botón seleccionado a “Quiero mi guía gratis” y conserva su acción..."
+                    name="rstk-imported-code-assistant-prompt"
+                    {...importedEditorNoAutocompleteAttrs}
+                    onChange={(event) => setCodeAssistantPrompt(event.target.value)}
+                  />
+                </label>
+                <div className={styles.importedCodeAssistantFooter}>
+                  <AIVoiceDictationControl
+                    voice={codeAssistantVoiceDictation}
+                    disabled={codeAssistantSaving}
+                    className={styles.importedCodeAssistantVoice}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      codeAssistantVoiceDictation.cancelVoice()
+                      setCodeAssistantPrompt('')
+                      setCodeAssistantError('')
+                    }}
+                    disabled={codeAssistantSaving || (!codeAssistantPrompt && !codeAssistantError)}
+                  >
+                    Limpiar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void applyCodeAssistantEdit()}
+                    disabled={!activeCodeFile || !codeAssistantPrompt.trim() || codeAssistantSaving}
+                    loading={codeAssistantSaving}
+                  >
+                    <Sparkles size={14} />
+                    Aplicar cambio
+                  </Button>
+                </div>
+              </div>
+            </>
           )}
         </section>
 
