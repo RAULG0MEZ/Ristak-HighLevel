@@ -9261,6 +9261,517 @@ const importedSectionSelector = [
   '[data-ristack-section]'
 ].join(', ')
 
+type ImportedFrameElementPathStep = {
+  tag: string
+  childIndex: number
+  tagIndex: number
+}
+
+type ImportedFrameElementDescriptor = {
+  source: 'ristak-imported-editor-preview'
+  mode?: 'visual' | 'code'
+  eventType?: string
+  tagName: string
+  id?: string
+  editId?: string
+  sectionId?: string
+  name?: string
+  href?: string
+  role?: string
+  text?: string
+  classes?: string[]
+  path?: ImportedFrameElementPathStep[]
+}
+
+type ImportedCodeSourceRange = {
+  start: number
+  end: number
+  line: number
+  label: string
+}
+
+const IMPORTED_EDITOR_MESSAGE_SOURCE = 'ristak-imported-editor-preview'
+const importedEditorActionSelector = [
+  'a[href]',
+  'button',
+  'input[type="submit"]',
+  'input[type="button"]',
+  'input[type="image"]',
+  '[role="button"]',
+  '[data-submit]'
+].join(', ')
+
+const importedCodeSelectableSelector = [
+  importedEditableSelector,
+  importedSectionSelector,
+  'a[href]',
+  'button',
+  'input',
+  'textarea',
+  'select',
+  'label',
+  'img',
+  'video',
+  'iframe',
+  'embed',
+  'object',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'p',
+  'section',
+  'article',
+  'main',
+  'header',
+  'footer',
+  'aside',
+  'figure',
+  'div'
+].join(', ')
+
+const importedHtmlVoidTags = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr'
+])
+
+const escapeImportedRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const getImportedFrameDescriptorAttribute = (element: Element, names: string[]) => {
+  for (const name of names) {
+    const value = element.getAttribute(name)
+    if (value) return value.trim()
+  }
+  return ''
+}
+
+const getImportedFrameElementPath = (element: Element): ImportedFrameElementPathStep[] => {
+  const path: ImportedFrameElementPathStep[] = []
+  let current: Element | null = element
+
+  while (current?.parentElement && current !== current.ownerDocument.documentElement && path.length < 18) {
+    const currentElement: Element = current
+    const parent: HTMLElement | null = currentElement.parentElement
+    if (!parent) break
+    const siblings: Element[] = Array.from(parent.children)
+    const sameTagSiblings = siblings.filter(sibling => sibling.tagName === currentElement.tagName)
+    path.unshift({
+      tag: currentElement.tagName.toLowerCase(),
+      childIndex: siblings.indexOf(currentElement),
+      tagIndex: sameTagSiblings.indexOf(currentElement)
+    })
+    current = parent
+  }
+
+  return path
+}
+
+const getImportedFrameElementDescriptor = (
+  element: Element,
+  mode: ImportedFrameElementDescriptor['mode'],
+  eventType = 'select'
+): ImportedFrameElementDescriptor => ({
+  source: IMPORTED_EDITOR_MESSAGE_SOURCE,
+  mode,
+  eventType,
+  tagName: element.tagName.toLowerCase(),
+  id: element.getAttribute('id') || '',
+  editId: getImportedFrameDescriptorAttribute(element, [
+    'data-rstk-edit-id',
+    'data-ristak-edit-id',
+    'data-ristack-edit-id'
+  ]),
+  sectionId: getImportedFrameDescriptorAttribute(element, [
+    'data-rstk-section',
+    'data-ristak-section',
+    'data-ristack-section'
+  ]),
+  name: element.getAttribute('name') || '',
+  href: element.getAttribute('href') || '',
+  role: element.getAttribute('role') || '',
+  text: (element.textContent || element.getAttribute('aria-label') || element.getAttribute('title') || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180),
+  classes: String(element.getAttribute('class') || '')
+    .split(/\s+/)
+    .map(value => value.trim())
+    .filter(Boolean)
+    .filter(value => !value.startsWith('rstk-imported-'))
+    .slice(0, 8),
+  path: getImportedFrameElementPath(element)
+})
+
+const isImportedFrameElementDescriptor = (value: unknown): value is ImportedFrameElementDescriptor => {
+  if (!value || typeof value !== 'object') return false
+  const payload = value as Partial<ImportedFrameElementDescriptor>
+  return payload.source === IMPORTED_EDITOR_MESSAGE_SOURCE && typeof payload.tagName === 'string'
+}
+
+const escapeImportedCssValue = (value: string) => {
+  if (typeof window !== 'undefined' && window.CSS && typeof window.CSS.escape === 'function') {
+    return window.CSS.escape(value)
+  }
+  return value.replace(/["\\#.:,[\]>+~*'=()\s]/g, '\\$&')
+}
+
+const findImportedFrameElementByPath = (
+  doc: Document,
+  path: ImportedFrameElementPathStep[] = []
+): HTMLElement | null => {
+  let current: Element | null = doc.documentElement
+
+  for (const step of path) {
+    if (!current) return null
+    const children: Element[] = Array.from(current.children)
+    let next: Element | null = children[step.childIndex] || null
+    if (next?.tagName.toLowerCase() !== step.tag) {
+      next = children.filter(child => child.tagName.toLowerCase() === step.tag)[step.tagIndex] || null
+    }
+    current = next
+  }
+
+  return current instanceof HTMLElement ? current : null
+}
+
+const findImportedFrameElementByDescriptor = (
+  doc: Document,
+  descriptor: ImportedFrameElementDescriptor
+): HTMLElement | null => {
+  const tagName = descriptor.tagName || '*'
+  const queryByAttribute = (names: string[], value?: string) => {
+    if (!value) return null
+    for (const name of names) {
+      const element = doc.querySelector<HTMLElement>(`${tagName}[${name}="${escapeImportedCssValue(value)}"], [${name}="${escapeImportedCssValue(value)}"]`)
+      if (element) return element
+    }
+    return null
+  }
+
+  return queryByAttribute(['data-rstk-edit-id', 'data-ristak-edit-id', 'data-ristack-edit-id'], descriptor.editId) ||
+    queryByAttribute(['data-rstk-section', 'data-ristak-section', 'data-ristack-section'], descriptor.sectionId) ||
+    (descriptor.id ? doc.querySelector<HTMLElement>(`${tagName}#${escapeImportedCssValue(descriptor.id)}, #${escapeImportedCssValue(descriptor.id)}`) : null) ||
+    (descriptor.name ? doc.querySelector<HTMLElement>(`${tagName}[name="${escapeImportedCssValue(descriptor.name)}"], [name="${escapeImportedCssValue(descriptor.name)}"]`) : null) ||
+    findImportedFrameElementByPath(doc, descriptor.path)
+}
+
+const buildImportedEditorFrameGuardScript = (mode: ImportedFrameElementDescriptor['mode']) => `
+<script data-rstk-imported-editor-guard="true">
+(() => {
+  if (window.__RSTK_IMPORTED_EDITOR_GUARD__) return;
+  window.__RSTK_IMPORTED_EDITOR_GUARD__ = true;
+  const messageSource = ${JSON.stringify(IMPORTED_EDITOR_MESSAGE_SOURCE)};
+  const mode = ${JSON.stringify(mode)};
+  const actionSelector = ${JSON.stringify(importedEditorActionSelector)};
+  const editableAliases = ['data-rstk-edit-id', 'data-ristak-edit-id', 'data-ristack-edit-id'];
+  const sectionAliases = ['data-rstk-section', 'data-ristak-section', 'data-ristack-section'];
+  const firstAttr = (element, names) => {
+    for (const name of names) {
+      const value = element && element.getAttribute ? element.getAttribute(name) : '';
+      if (value) return String(value).trim();
+    }
+    return '';
+  };
+  const getPath = (element) => {
+    const path = [];
+    let current = element;
+    while (current && current.parentElement && current !== document.documentElement && path.length < 18) {
+      const parent = current.parentElement;
+      const children = Array.from(parent.children);
+      const sameTag = children.filter(child => child.tagName === current.tagName);
+      path.unshift({
+        tag: current.tagName.toLowerCase(),
+        childIndex: children.indexOf(current),
+        tagIndex: sameTag.indexOf(current)
+      });
+      current = parent;
+    }
+    return path;
+  };
+  const describe = (rawElement, eventType) => {
+    const element = rawElement && rawElement.nodeType === 1 ? rawElement : rawElement?.parentElement;
+    if (!element || !element.tagName) return null;
+    return {
+      source: messageSource,
+      mode,
+      eventType,
+      tagName: element.tagName.toLowerCase(),
+      id: element.getAttribute('id') || '',
+      editId: firstAttr(element, editableAliases),
+      sectionId: firstAttr(element, sectionAliases),
+      name: element.getAttribute('name') || '',
+      href: element.getAttribute('href') || '',
+      role: element.getAttribute('role') || '',
+      text: String(element.textContent || element.getAttribute('aria-label') || element.getAttribute('title') || '').replace(/\\s+/g, ' ').trim().slice(0, 180),
+      classes: String(element.getAttribute('class') || '').split(/\\s+/).map(value => value.trim()).filter(Boolean).filter(value => !value.startsWith('rstk-imported-')).slice(0, 8),
+      path: getPath(element)
+    };
+  };
+  const post = (element, eventType) => {
+    const descriptor = describe(element, eventType);
+    if (!descriptor) return;
+    try {
+      window.parent.postMessage(descriptor, '*');
+    } catch {}
+  };
+  const block = (event, actionElement) => {
+    post(actionElement || event.target, event.type);
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+    return false;
+  };
+  const handleActivation = (event) => {
+    const target = event.target && event.target.nodeType === 1 ? event.target : event.target?.parentElement;
+    const actionElement = event.type === 'submit'
+      ? event.target
+      : target?.closest ? target.closest(actionSelector) : null;
+    if (!actionElement) return;
+    return block(event, actionElement);
+  };
+  const handleKeydown = (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target && event.target.nodeType === 1 ? event.target : event.target?.parentElement;
+    const actionElement = target?.closest ? target.closest(actionSelector) : null;
+    if (!actionElement) return;
+    return block(event, actionElement);
+  };
+  document.addEventListener('click', handleActivation, true);
+  document.addEventListener('auxclick', handleActivation, true);
+  document.addEventListener('submit', handleActivation, true);
+  document.addEventListener('keydown', handleKeydown, true);
+  try {
+    const originalSubmit = HTMLFormElement.prototype.submit;
+    HTMLFormElement.prototype.submit = function submitBlockedInRistakEditor() {
+      post(this, 'submit');
+      return undefined;
+    };
+    const originalRequestSubmit = HTMLFormElement.prototype.requestSubmit;
+    if (originalRequestSubmit) {
+      HTMLFormElement.prototype.requestSubmit = function requestSubmitBlockedInRistakEditor() {
+        post(this, 'submit');
+        return undefined;
+      };
+    }
+    window.__RSTK_IMPORTED_EDITOR_ORIGINAL_FORM_SUBMIT__ = originalSubmit;
+  } catch {}
+  try {
+    window.open = function openBlockedInRistakEditor() {
+      post(document.activeElement || document.body, 'open');
+      return null;
+    };
+  } catch {}
+})();
+</script>
+`
+
+const buildImportedEditorPreviewHtml = (html: string, mode: ImportedFrameElementDescriptor['mode']) => {
+  if (!html) return ''
+  const guard = buildImportedEditorFrameGuardScript(mode)
+  if (/<head\b[^>]*>/i.test(html)) {
+    return html.replace(/<head\b[^>]*>/i, match => `${match}${guard}`)
+  }
+  if (/<html\b[^>]*>/i.test(html)) {
+    return html.replace(/<html\b[^>]*>/i, match => `${match}${guard}`)
+  }
+  return `${guard}${html}`
+}
+
+const getImportedHtmlStartTagAttribute = (startTag: string, attrName: string) => {
+  const attrRegex = new RegExp(`\\s${escapeImportedRegex(attrName)}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>` + '`' + `]+))`, 'i')
+  const match = startTag.match(attrRegex)
+  return (match?.[1] || match?.[2] || match?.[3] || '').trim()
+}
+
+const isImportedHtmlSelfClosingTag = (tagName: string, startTag: string) => (
+  importedHtmlVoidTags.has(tagName) || /\/\s*>$/.test(startTag)
+)
+
+const findImportedHtmlElementRangeEnd = (html: string, tagName: string, startEnd: number) => {
+  if (importedHtmlVoidTags.has(tagName)) return startEnd
+
+  const tagRegex = new RegExp(`<\\/?${escapeImportedRegex(tagName)}\\b[^>]*>`, 'gi')
+  tagRegex.lastIndex = startEnd
+  let depth = 1
+  let match: RegExpExecArray | null
+
+  while ((match = tagRegex.exec(html))) {
+    const tag = match[0]
+    if (/^<\//.test(tag)) {
+      depth -= 1
+      if (depth <= 0) return match.index + tag.length
+      continue
+    }
+    if (!isImportedHtmlSelfClosingTag(tagName, tag)) {
+      depth += 1
+    }
+  }
+
+  return startEnd
+}
+
+const findImportedHtmlSourceRangeByStart = (
+  html: string,
+  start: number,
+  startTag: string,
+  tagName: string,
+  label: string
+): ImportedCodeSourceRange => {
+  const startEnd = start + startTag.length
+  const end = isImportedHtmlSelfClosingTag(tagName, startTag)
+    ? startEnd
+    : findImportedHtmlElementRangeEnd(html, tagName, startEnd)
+  return {
+    start,
+    end: Math.max(startEnd, end),
+    line: html.slice(0, start).split('\n').length,
+    label
+  }
+}
+
+const getImportedCodeRangeLabel = (descriptor: ImportedFrameElementDescriptor) => {
+  const tagName = descriptor.tagName || 'elemento'
+  if (descriptor.editId) return `${tagName} · ${descriptor.editId}`
+  if (descriptor.id) return `${tagName}#${descriptor.id}`
+  if (descriptor.name) return `${tagName}[name="${descriptor.name}"]`
+  if (descriptor.text) return `${tagName} · ${descriptor.text.slice(0, 48)}`
+  return tagName
+}
+
+const findImportedSourceRangeByAttribute = (
+  html: string,
+  descriptor: ImportedFrameElementDescriptor
+): ImportedCodeSourceRange | null => {
+  const attrCandidates: Array<{ names: string[]; value?: string }> = [
+    { names: ['data-rstk-edit-id', 'data-ristak-edit-id', 'data-ristack-edit-id'], value: descriptor.editId },
+    { names: ['data-rstk-section', 'data-ristak-section', 'data-ristack-section'], value: descriptor.sectionId },
+    { names: ['id'], value: descriptor.id },
+    { names: ['name'], value: descriptor.name },
+    { names: ['href'], value: descriptor.href }
+  ].filter(candidate => Boolean(candidate.value))
+
+  if (!attrCandidates.length) return null
+
+  const tagRegex = /<([A-Za-z][\w:-]*)\b[^>]*>/g
+  let match: RegExpExecArray | null
+  while ((match = tagRegex.exec(html))) {
+    const tagName = match[1].toLowerCase()
+    if (descriptor.tagName && tagName !== descriptor.tagName) continue
+    const startTag = match[0]
+    const found = attrCandidates.some(candidate => candidate.names.some(name => getImportedHtmlStartTagAttribute(startTag, name) === candidate.value))
+    if (!found) continue
+    return findImportedHtmlSourceRangeByStart(html, match.index, startTag, tagName, getImportedCodeRangeLabel(descriptor))
+  }
+
+  return null
+}
+
+const importedSourcePathMatches = (
+  currentPath: ImportedFrameElementPathStep[],
+  targetPath: ImportedFrameElementPathStep[] = []
+) => {
+  if (!targetPath.length || currentPath.length !== targetPath.length) return false
+  return currentPath.every((step, index) => {
+    const target = targetPath[index]
+    return step.tag === target.tag && step.childIndex === target.childIndex
+  })
+}
+
+const findImportedSourceRangeByPath = (
+  html: string,
+  descriptor: ImportedFrameElementDescriptor
+): ImportedCodeSourceRange | null => {
+  const targetPath = descriptor.path || []
+  if (!targetPath.length) return null
+
+  const stack: Array<{
+    tag: string
+    path: ImportedFrameElementPathStep[]
+    childIndex: number
+    tagCounts: Map<string, number>
+  }> = [{ tag: '#document', path: [], childIndex: 0, tagCounts: new Map() }]
+  const tagRegex = /<!--[\s\S]*?-->|<!doctype[^>]*>|<\/?([A-Za-z][\w:-]*)\b[^>]*>/gi
+  let match: RegExpExecArray | null
+
+  while ((match = tagRegex.exec(html))) {
+    const rawTag = match[0]
+    if (rawTag.startsWith('<!--') || /^<!doctype/i.test(rawTag)) continue
+    const tagName = (match[1] || '').toLowerCase()
+    if (!tagName) continue
+
+    if (/^<\//.test(rawTag)) {
+      for (let index = stack.length - 1; index > 0; index -= 1) {
+        const entry = stack.pop()
+        if (entry?.tag === tagName) break
+      }
+      continue
+    }
+
+    const parent = stack[stack.length - 1]
+    const childIndex = parent.childIndex
+    parent.childIndex += 1
+    const tagIndex = parent.tagCounts.get(tagName) || 0
+    parent.tagCounts.set(tagName, tagIndex + 1)
+    const currentPath = [...parent.path, { tag: tagName, childIndex, tagIndex }]
+
+    if (importedSourcePathMatches(currentPath, targetPath)) {
+      return findImportedHtmlSourceRangeByStart(html, match.index, rawTag, tagName, getImportedCodeRangeLabel(descriptor))
+    }
+
+    if (!isImportedHtmlSelfClosingTag(tagName, rawTag)) {
+      stack.push({ tag: tagName, path: currentPath, childIndex: 0, tagCounts: new Map() })
+    }
+  }
+
+  return null
+}
+
+const findImportedSourceRangeByText = (
+  html: string,
+  descriptor: ImportedFrameElementDescriptor
+): ImportedCodeSourceRange | null => {
+  const text = (descriptor.text || '').trim()
+  if (!text || text.length < 3 || text.length > 180) return null
+  const normalizedNeedle = text.replace(/\s+/g, ' ')
+  const normalizedHtml = html.replace(/\s+/g, ' ')
+  const normalizedIndex = normalizedHtml.indexOf(normalizedNeedle)
+  if (normalizedIndex < 0) return null
+
+  const beforeNormalized = normalizedHtml.slice(0, normalizedIndex)
+  const approximateRawIndex = Math.min(html.length - 1, beforeNormalized.length)
+  const tagName = descriptor.tagName || 'div'
+  const start = html.lastIndexOf(`<${tagName}`, approximateRawIndex)
+  if (start < 0) return null
+  const startTagEnd = html.indexOf('>', start)
+  if (startTagEnd < 0) return null
+  const startTag = html.slice(start, startTagEnd + 1)
+  return findImportedHtmlSourceRangeByStart(html, start, startTag, tagName, getImportedCodeRangeLabel(descriptor))
+}
+
+const findImportedSourceRangeForDescriptor = (
+  html: string,
+  descriptor: ImportedFrameElementDescriptor
+): ImportedCodeSourceRange | null => {
+  if (!html.trim()) return null
+  return findImportedSourceRangeByAttribute(html, descriptor) ||
+    findImportedSourceRangeByPath(html, descriptor) ||
+    findImportedSourceRangeByText(html, descriptor)
+}
+
 const IMPORTED_AI_VISUAL_MAX_ELEMENTS = 42
 const IMPORTED_AI_VISUAL_SCREENSHOT_WIDTH = 900
 const IMPORTED_AI_VISUAL_SCREENSHOT_HEIGHT = 1150
@@ -10884,9 +11395,12 @@ const ImportedHtmlEditorPanel: React.FC<{
 }) => {
   const { showToast } = useNotification()
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const codePreviewIframeRef = useRef<HTMLIFrameElement | null>(null)
   const codeSplitRef = useRef<HTMLDivElement | null>(null)
   const codeHighlightRef = useRef<HTMLPreElement | null>(null)
+  const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const selectedIframeElementRef = useRef<HTMLElement | null>(null)
+  const selectedCodePreviewElementRef = useRef<HTMLElement | null>(null)
   const previewVisualContextRef = useRef<SitesAIPreviewVisualContext | null>(null)
   const inlineImageFileInputRef = useRef<HTMLInputElement | null>(null)
   const [routeEditing, setRouteEditing] = useState(false)
@@ -10911,6 +11425,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   const [contentError, setContentError] = useState('')
   const [codeEditorWidth, setCodeEditorWidth] = useState(50)
   const [codeEditorTheme, setCodeEditorTheme] = useState<ImportedCodeTheme>('dark')
+  const [codeSelectionNotice, setCodeSelectionNotice] = useState('')
   const importedPages = pages.length ? pages : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Página 1', sortOrder: 0 }]
   const activeImportedPage = importedPages.find(page => page.id === activePageId) || importedPages[0]
   const codeFiles = useMemo<ImportedSiteCodeFile[]>(() => {
@@ -10940,6 +11455,12 @@ const ImportedHtmlEditorPanel: React.FC<{
   const activeCodeKey = activeCodeFile ? getImportedCodeFileKey(activeCodeFile.path) : ''
   const activeCodeValue = activeCodeFile ? codeDrafts[activeCodeKey] ?? activeCodeFile.content : ''
   const activeCodeDirty = Boolean(activeCodeKey && Object.prototype.hasOwnProperty.call(codeDrafts, activeCodeKey))
+  const activePageDraftPreviewHtml = activeCodeFile?.language === 'html' && activeCodeDirty ? activeCodeValue : ''
+  const editorPreviewHtml = activePageDraftPreviewHtml || previewHtml
+  const guardedEditorPreviewHtml = useMemo(
+    () => buildImportedEditorPreviewHtml(editorPreviewHtml, 'visual'),
+    [editorPreviewHtml]
+  )
   const activeCodeDiagnostics = useMemo(
     () => getImportedCodeDiagnostics(activeCodeValue, activeCodeFile?.language || 'html'),
     [activeCodeFile?.language, activeCodeValue]
@@ -11026,8 +11547,8 @@ const ImportedHtmlEditorPanel: React.FC<{
   }, [loadInlinePreview])
 
   const currentPageCanSubmitForm = useMemo(() => (
-    hasImportedSubmittableFormFields(previewHtml)
-  ), [previewHtml])
+    hasImportedSubmittableFormFields(editorPreviewHtml)
+  ), [editorPreviewHtml])
   const currentPageActionOptions = useMemo(() => (
     getImportedButtonActionOptionsForPage(currentPageCanSubmitForm)
   ), [currentPageCanSubmitForm])
@@ -11379,7 +11900,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   }
 
   useEffect(() => {
-    if (previewLoading || !previewHtml) return
+    if (previewLoading || !editorPreviewHtml) return
     const iframe = iframeRef.current
     if (!iframe) return
 
@@ -11388,12 +11909,20 @@ const ImportedHtmlEditorPanel: React.FC<{
     const installEditorHooks = () => {
       if (cancelled) return
       cleanupDocument()
-      const doc = iframe.contentDocument
+      const doc = (() => {
+        try {
+          const frameDoc = iframe.contentDocument
+          if (frameDoc?.location.href && frameDoc.location.href !== 'about:srcdoc') {
+            iframe.srcdoc = guardedEditorPreviewHtml
+            return null
+          }
+          return frameDoc
+        } catch {
+          iframe.srcdoc = guardedEditorPreviewHtml
+          return null
+        }
+      })()
       if (!doc) return
-      if (doc.location.href !== 'about:srcdoc') {
-        iframe.srcdoc = previewHtml
-        return
-      }
 
       const contextPage = activeImportedPage || importedPages[0] || { id: DEFAULT_FUNNEL_PAGE_ID, title: 'Página 1', sortOrder: 0 }
       void buildImportedPreviewVisualContext(iframe, site, contextPage)
@@ -11637,6 +12166,73 @@ const ImportedHtmlEditorPanel: React.FC<{
         return target.closest('a[href], button, input[type="submit"], input[type="button"], input[type="image"], [role="button"], [data-submit]') as HTMLElement | null
       }
 
+      const selectImportedFrameTarget = (target: Element) => {
+        const formFieldElement = getFormFieldFromFrameTarget(target)
+        if (formFieldElement) {
+          formFieldElement.blur()
+          const fieldSelection = readImportedFormFieldSelection(formFieldElement, doc)
+          const visualElement = (formFieldElement.closest('label') ||
+            (fieldSelection.fieldHtmlId ? doc.querySelector(`label[for="${fieldSelection.fieldHtmlId.replace(/"/g, '\\"')}"]`) : null) ||
+            formFieldElement) as HTMLElement
+          selectElement(visualElement)
+          removeMediaActionButton()
+          openFieldEditorForSelection(fieldSelection)
+          return true
+        }
+
+        const choiceInput = getImportedChoiceInputFromTarget(target, doc)
+        if (choiceInput) {
+          const choiceSelection = readImportedChoiceSelection(choiceInput, doc)
+          const visualElement = (choiceInput.closest('label') ||
+            (choiceInput.id ? doc.querySelector(`label[for="${choiceInput.id.replace(/"/g, '\\"')}"]`) : null) ||
+            choiceInput) as HTMLElement
+          selectElement(visualElement)
+          removeMediaActionButton()
+          openChoiceEditorForSelection(choiceSelection)
+          return true
+        }
+
+        const editableElement = target.closest(importedEditableSelector) as HTMLElement | null
+        if (editableElement) {
+          const selection = readImportedEditableSelection(editableElement)
+          if (!selection) return false
+          selectElement(editableElement)
+          removeMediaActionButton()
+          setAiRegionMode(false)
+          setAiRegionSelection(null)
+          setAiRegionError('')
+          if (selection.editType === 'image' || selection.editType === 'background_image' || selection.editType === 'video') {
+            setButtonEditor(null)
+            setChoiceEditor(null)
+            openInlineEditorForElement(editableElement, selection, selection.editType === 'video' ? 'video' : 'image')
+          } else if (selection.editType === 'button') {
+            openButtonEditorForSelection(selection)
+          } else if (selection.editType === 'placeholder') {
+            setButtonEditor(null)
+            setChoiceEditor(null)
+            openInlineEditorForElement(editableElement, selection, 'text')
+          } else {
+            setButtonEditor(null)
+            setChoiceEditor(null)
+            beginTextEdit(editableElement, selection)
+          }
+          return true
+        }
+
+        const sectionElement = target.closest(importedSectionSelector) as HTMLElement | null
+        if (sectionElement) {
+          selectElement(sectionElement)
+          setInlineEditor(null)
+          setButtonEditor(null)
+          setChoiceEditor(null)
+          setContentError('')
+          removeMediaActionButton()
+          return true
+        }
+
+        return false
+      }
+
       const handleFrameSubmit = (event: SubmitEvent) => {
         blockImportedPreviewActivation(event)
       }
@@ -11666,70 +12262,8 @@ const ImportedHtmlEditorPanel: React.FC<{
           blockImportedPreviewActivation(event)
         }
 
-        const formFieldElement = getFormFieldFromFrameTarget(target)
-        if (formFieldElement) {
+        if (selectImportedFrameTarget(target)) {
           blockImportedPreviewActivation(event)
-          formFieldElement.blur()
-          const fieldSelection = readImportedFormFieldSelection(formFieldElement, doc)
-          const visualElement = (formFieldElement.closest('label') ||
-            (fieldSelection.fieldHtmlId ? doc.querySelector(`label[for="${fieldSelection.fieldHtmlId.replace(/"/g, '\\"')}"]`) : null) ||
-            formFieldElement) as HTMLElement
-          selectElement(visualElement)
-          removeMediaActionButton()
-          openFieldEditorForSelection(fieldSelection)
-          return
-        }
-
-        const choiceInput = getImportedChoiceInputFromTarget(target, doc)
-        if (choiceInput) {
-          blockImportedPreviewActivation(event)
-          const choiceSelection = readImportedChoiceSelection(choiceInput, doc)
-          const visualElement = (choiceInput.closest('label') ||
-            (choiceInput.id ? doc.querySelector(`label[for="${choiceInput.id.replace(/"/g, '\\"')}"]`) : null) ||
-            choiceInput) as HTMLElement
-          selectElement(visualElement)
-          removeMediaActionButton()
-          openChoiceEditorForSelection(choiceSelection)
-          return
-        }
-
-        const editableElement = target.closest(importedEditableSelector) as HTMLElement | null
-        if (editableElement) {
-          const selection = readImportedEditableSelection(editableElement)
-          if (!selection) return
-          blockImportedPreviewActivation(event)
-          selectElement(editableElement)
-          removeMediaActionButton()
-          setAiRegionMode(false)
-          setAiRegionSelection(null)
-          setAiRegionError('')
-          if (selection.editType === 'image' || selection.editType === 'background_image' || selection.editType === 'video') {
-            setButtonEditor(null)
-            setChoiceEditor(null)
-            openInlineEditorForElement(editableElement, selection, selection.editType === 'video' ? 'video' : 'image')
-          } else if (selection.editType === 'button') {
-            openButtonEditorForSelection(selection)
-          } else if (selection.editType === 'placeholder') {
-            setButtonEditor(null)
-            setChoiceEditor(null)
-            openInlineEditorForElement(editableElement, selection, 'text')
-          } else {
-            setButtonEditor(null)
-            setChoiceEditor(null)
-            beginTextEdit(editableElement, selection)
-          }
-          return
-        }
-
-        const sectionElement = target.closest(importedSectionSelector) as HTMLElement | null
-        if (sectionElement) {
-          blockImportedPreviewActivation(event)
-          selectElement(sectionElement)
-          setInlineEditor(null)
-          setButtonEditor(null)
-          setChoiceEditor(null)
-          setContentError('')
-          removeMediaActionButton()
           return
         }
 
@@ -11862,6 +12396,14 @@ const ImportedHtmlEditorPanel: React.FC<{
       doc.addEventListener('click', handleFrameClick, true)
       doc.addEventListener('auxclick', handleFrameClick, true)
       doc.addEventListener('submit', handleFrameSubmit, true)
+      const handleFrameGuardMessage = (event: MessageEvent) => {
+        if (event.source !== iframe.contentWindow) return
+        if (!isImportedFrameElementDescriptor(event.data) || event.data.mode !== 'visual') return
+        const messageElement = findImportedFrameElementByDescriptor(doc, event.data)
+        if (!messageElement) return
+        selectImportedFrameTarget(messageElement)
+      }
+      window.addEventListener('message', handleFrameGuardMessage)
       setPanelFormFields(collectImportedPanelFormFields(doc))
       cleanupDocument = () => {
         doc.removeEventListener('mouseover', handleFrameMouseOver, true)
@@ -11869,6 +12411,7 @@ const ImportedHtmlEditorPanel: React.FC<{
         doc.removeEventListener('click', handleFrameClick, true)
         doc.removeEventListener('auxclick', handleFrameClick, true)
         doc.removeEventListener('submit', handleFrameSubmit, true)
+        window.removeEventListener('message', handleFrameGuardMessage)
         removeRegionDragHandlers()
         removeMediaActionButton()
         removeRegionBox()
@@ -11886,7 +12429,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       iframe.removeEventListener('load', installEditorHooks)
       cleanupDocument()
     }
-  }, [activeImportedPage?.id, activeImportedPage?.title, aiRegionMode, aiRegionSelection, clearInlineSelection, importedPages, onPreviewContextChange, openButtonEditorForSelection, openChoiceEditorForSelection, openFieldEditorForSelection, openInlineEditorForElement, previewHtml, previewLoading, previewVersion, saveEditableContent, site.id, site.name, site.title])
+  }, [activeImportedPage?.id, activeImportedPage?.title, aiRegionMode, aiRegionSelection, clearInlineSelection, editorPreviewHtml, guardedEditorPreviewHtml, importedPages, onPreviewContextChange, openButtonEditorForSelection, openChoiceEditorForSelection, openFieldEditorForSelection, openInlineEditorForElement, previewLoading, previewVersion, saveEditableContent, site.id, site.name, site.title])
 
   const routeValue = getRouteEditorValue(site)
   const saveRoute = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -12111,6 +12654,146 @@ const ImportedHtmlEditorPanel: React.FC<{
   const activeCodePreviewHtml = activeCodeFile?.language === 'html'
     ? activeCodeValue
     : previewHtml
+  const guardedCodePreviewHtml = useMemo(
+    () => buildImportedEditorPreviewHtml(activeCodePreviewHtml, 'code'),
+    [activeCodePreviewHtml]
+  )
+  const focusImportedCodeRange = useCallback((range: ImportedCodeSourceRange) => {
+    setCodeSelectionNotice(`${range.label} · línea ${range.line}`)
+    window.requestAnimationFrame(() => {
+      const textarea = codeTextareaRef.current
+      if (!textarea) return
+      textarea.focus({ preventScroll: true })
+      textarea.setSelectionRange(range.start, range.end)
+      const lineHeight = Number.parseFloat(window.getComputedStyle(textarea).lineHeight) || 20
+      const targetScrollTop = Math.max(0, (range.line - 3) * lineHeight)
+      textarea.scrollTop = targetScrollTop
+      if (codeHighlightRef.current) {
+        codeHighlightRef.current.scrollTop = textarea.scrollTop
+        codeHighlightRef.current.scrollLeft = textarea.scrollLeft
+      }
+    })
+  }, [])
+  const selectImportedCodePreviewElement = useCallback((element: HTMLElement, descriptor?: ImportedFrameElementDescriptor) => {
+    const selectionDescriptor = descriptor || getImportedFrameElementDescriptor(element, 'code')
+    const range = findImportedSourceRangeForDescriptor(activeCodePreviewHtml, selectionDescriptor)
+    selectedCodePreviewElementRef.current?.classList.remove('rstk-imported-code-selected')
+    selectedCodePreviewElementRef.current = element
+    element.classList.add('rstk-imported-code-selected')
+
+    if (!range) {
+      setCodeSelectionNotice('No pude ubicar ese elemento exacto en el código.')
+      return
+    }
+
+    focusImportedCodeRange(range)
+  }, [activeCodePreviewHtml, focusImportedCodeRange])
+
+  useEffect(() => {
+    if (!codeEditorOpen) {
+      setCodeSelectionNotice('')
+      selectedCodePreviewElementRef.current?.classList.remove('rstk-imported-code-selected')
+      selectedCodePreviewElementRef.current = null
+    }
+  }, [codeEditorOpen])
+
+  useEffect(() => {
+    if (!codeEditorOpen || !activeCodePreviewHtml) return
+    const iframe = codePreviewIframeRef.current
+    if (!iframe) return
+
+    let cleanupDocument = () => {}
+    let cancelled = false
+
+    const installCodePreviewHooks = () => {
+      if (cancelled) return
+      cleanupDocument()
+
+      let doc: Document | null = null
+      try {
+        doc = iframe.contentDocument
+        if (doc?.location.href && doc.location.href !== 'about:srcdoc') {
+          iframe.srcdoc = guardedCodePreviewHtml
+          return
+        }
+      } catch {
+        iframe.srcdoc = guardedCodePreviewHtml
+        return
+      }
+
+      if (!doc) return
+
+      const style = doc.createElement('style')
+      style.setAttribute('data-rstk-imported-code-overlay', 'true')
+      style.textContent = `
+        ${importedCodeSelectableSelector} {
+          cursor: pointer !important;
+        }
+        ${importedCodeSelectableSelector}:hover {
+          outline: 1px dashed rgba(100, 116, 139, 0.5) !important;
+          outline-offset: 4px !important;
+          border-radius: 4px !important;
+        }
+        .rstk-imported-code-selected {
+          outline: 2px dashed #2563eb !important;
+          outline-offset: 5px !important;
+          border-radius: 6px !important;
+          box-shadow:
+            0 0 0 1px rgba(15, 23, 42, 0.18),
+            0 0 0 4px rgba(37, 99, 235, 0.14) !important;
+        }
+      `
+      doc.head?.appendChild(style)
+
+      const getSelectableTarget = (target: Element | null) => {
+        if (!target || typeof target.closest !== 'function') return null
+        return target.closest(importedCodeSelectableSelector) as HTMLElement | null
+      }
+
+      const handleCodePreviewClick = (event: MouseEvent) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (typeof event.stopImmediatePropagation === 'function') {
+          event.stopImmediatePropagation()
+        }
+        const target = getSelectableTarget(event.target as Element | null)
+        if (!target) return
+        selectImportedCodePreviewElement(target)
+      }
+
+      doc.addEventListener('click', handleCodePreviewClick, true)
+      doc.addEventListener('auxclick', handleCodePreviewClick, true)
+      cleanupDocument = () => {
+        doc?.removeEventListener('click', handleCodePreviewClick, true)
+        doc?.removeEventListener('auxclick', handleCodePreviewClick, true)
+        selectedCodePreviewElementRef.current?.classList.remove('rstk-imported-code-selected')
+        selectedCodePreviewElementRef.current = null
+        style.remove()
+      }
+    }
+
+    const handleCodePreviewMessage = (event: MessageEvent) => {
+      if (event.source !== iframe.contentWindow) return
+      if (!isImportedFrameElementDescriptor(event.data) || event.data.mode !== 'code') return
+      const doc = iframe.contentDocument
+      if (!doc) return
+      const element = findImportedFrameElementByDescriptor(doc, event.data)
+      if (!element) return
+      selectImportedCodePreviewElement(element, event.data)
+    }
+
+    iframe.addEventListener('load', installCodePreviewHooks)
+    window.addEventListener('message', handleCodePreviewMessage)
+    const installTimeout = window.setTimeout(installCodePreviewHooks, 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(installTimeout)
+      iframe.removeEventListener('load', installCodePreviewHooks)
+      window.removeEventListener('message', handleCodePreviewMessage)
+      cleanupDocument()
+    }
+  }, [activeCodePreviewHtml, codeEditorOpen, guardedCodePreviewHtml, selectImportedCodePreviewElement])
 
   if (codeEditorOpen) {
     return (
@@ -12167,6 +12850,7 @@ const ImportedHtmlEditorPanel: React.FC<{
                 <code dangerouslySetInnerHTML={{ __html: highlightedActiveCode }} />
               </pre>
               <textarea
+                ref={codeTextareaRef}
                 className={styles.importedCodeTextarea}
                 value={activeCodeValue}
                 spellCheck={false}
@@ -12208,11 +12892,17 @@ const ImportedHtmlEditorPanel: React.FC<{
           <span />
         </div>
 
-        <section className={styles.importedCodePreviewPane}>
+        <section className={`${styles.importedCodePreviewPane} ${codeSelectionNotice ? styles.importedCodePreviewPaneWithNotice : ''}`}>
           <div className={styles.importedCodePaneHeader}>
             <span>Vista de página</span>
             <strong>{activeImportedPage?.title || 'Página'}</strong>
           </div>
+          {codeSelectionNotice && (
+            <div className={styles.importedCodeSelectionNotice}>
+              <MousePointerClick size={13} />
+              <span>{codeSelectionNotice}</span>
+            </div>
+          )}
           <div className={`${styles.importedCodePreviewStage} ${device === 'mobile' ? styles.importedCodePreviewStageMobile : ''}`}>
             {previewLoading && !activeCodePreviewHtml ? (
               <div className={styles.importedPreviewState}>
@@ -12227,9 +12917,10 @@ const ImportedHtmlEditorPanel: React.FC<{
             ) : activeCodePreviewHtml ? (
               <iframe
                 key={`${site.id}-${activeCodeKey}-${activeCodeValue.length}-${device}`}
+                ref={codePreviewIframeRef}
                 className={styles.importedCodePreviewFrame}
                 title={`Vista previa de ${activeImportedPage?.title || site.name}`}
-                srcDoc={activeCodePreviewHtml}
+                srcDoc={guardedCodePreviewHtml}
                 sandbox="allow-same-origin allow-scripts"
                 referrerPolicy="no-referrer-when-downgrade"
               />
@@ -12261,18 +12952,18 @@ const ImportedHtmlEditorPanel: React.FC<{
               <span>{previewError}</span>
             </div>
           )}
-          {!previewLoading && !previewError && previewHtml && (
+          {!previewLoading && !previewError && editorPreviewHtml && (
             <iframe
               ref={iframeRef}
-              key={`${site.id}-${activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID}-${previewVersion}-${device}`}
+              key={`${site.id}-${activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID}-${previewVersion}-${device}-${activePageDraftPreviewHtml.length}`}
               className={styles.importedPreviewFrame}
               title={`Vista previa de ${activeImportedPage?.title || site.name}`}
-              srcDoc={previewHtml}
+              srcDoc={guardedEditorPreviewHtml}
               sandbox="allow-same-origin allow-scripts"
               referrerPolicy="no-referrer-when-downgrade"
             />
           )}
-          {!previewLoading && !previewError && !previewHtml && (
+          {!previewLoading && !previewError && !editorPreviewHtml && (
             <div className={styles.importedPreviewState}>
               <FileText size={18} />
               <span>La vista previa todavía no tiene contenido.</span>

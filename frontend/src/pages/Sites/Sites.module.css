@@ -320,7 +320,6 @@
   overflow: hidden;
 }
 
-.importedCodeFilesPane,
 .importedCodeSourcePane,
 .importedCodePreviewPane {
   min-width: 0;
@@ -331,6 +330,10 @@
   border-radius: 8px;
   background: var(--color-background-primary);
   overflow: hidden;
+}
+
+.importedCodePreviewPaneWithNotice {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .importedCodePaneHeader {
@@ -444,89 +447,6 @@
   background: var(--color-background-primary) !important;
   color: var(--color-text-primary) !important;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
-}
-
-.importedCodeFilesList {
-  min-height: 0;
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
-  padding: 10px;
-}
-
-.importedCodeFileButton {
-  width: 100%;
-  min-width: 0;
-  min-height: 48px;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 9px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  padding: 8px 9px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.importedCodeFileButton:hover:not(:disabled) {
-  border-color: rgba(148, 163, 184, 0.22);
-  background: rgba(148, 163, 184, 0.08);
-  color: var(--color-text-primary);
-}
-
-.importedCodeFileButton:disabled {
-  cursor: not-allowed;
-  opacity: 0.62;
-}
-
-.importedCodeFileButton svg {
-  color: var(--color-text-tertiary);
-}
-
-.importedCodeFileButton span {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.importedCodeFileButton strong,
-.importedCodeFileButton small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.importedCodeFileButton strong {
-  color: inherit;
-  font-size: 0.82rem;
-  font-weight: 760;
-}
-
-.importedCodeFileButton small {
-  color: var(--color-text-tertiary);
-  font-size: 0.72rem;
-  font-weight: 650;
-}
-
-.importedCodeFileButton i {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--color-warning, #f59e0b);
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.14);
-}
-
-.importedCodeFileButtonActive {
-  border-color: rgba(var(--color-primary-rgb), 0.32);
-  background: rgba(var(--color-primary-rgb), 0.08);
-  color: var(--color-text-primary);
 }
 
 .importedCodeSourcePaneDark {
@@ -672,6 +592,32 @@
 :global(body.rstk-code-resizing) {
   cursor: col-resize;
   user-select: none;
+}
+
+.importedCodeSelectionNotice {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(var(--color-primary-rgb), 0.06);
+  color: var(--color-text-secondary);
+  padding: 0 12px;
+  font-size: 0.74rem;
+  font-weight: 740;
+  letter-spacing: 0;
+}
+
+.importedCodeSelectionNotice svg {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+}
+
+.importedCodeSelectionNotice span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .importedCodePreviewStage {
