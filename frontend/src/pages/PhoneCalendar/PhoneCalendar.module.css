@@ -270,6 +270,11 @@
   white-space: nowrap;
 }
 
+.periodChipPlaceholder {
+  flex: 0 0 1px;
+  min-height: 42px;
+}
+
 .headerCapsule {
   display: inline-flex;
   align-items: center;
@@ -530,7 +535,7 @@
 .miniMonthGrid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 1px;
+  gap: 2px 1px;
   min-height: 46px;
   color: #050505;
 }
@@ -1928,7 +1933,7 @@
   }
 
   .miniMonthGrid {
-    gap: 8px 10px;
+    gap: 10px 10px;
     min-height: 172px;
   }
 

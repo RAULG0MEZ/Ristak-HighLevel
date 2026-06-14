@@ -995,6 +995,34 @@ export const PhoneCalendar: React.FC = () => {
     setCalendarView('day')
   }
 
+  const handleCurrentMonth = () => {
+    const today = toDateInTimeZone(new Date().toISOString(), timezone) ?? new Date()
+    setSelectedDate(today)
+    setCurrentDate(today)
+    setCalendarView('month')
+  }
+
+  const handleCurrentYear = () => {
+    const today = toDateInTimeZone(new Date().toISOString(), timezone) ?? new Date()
+    setSelectedDate(today)
+    setCurrentDate(today)
+    setCalendarView('year')
+  }
+
+  const handleQuickReturn = () => {
+    if (calendarView === 'year') {
+      handleCurrentMonth()
+      return
+    }
+
+    if (calendarView === 'years') {
+      handleCurrentYear()
+      return
+    }
+
+    handleToday()
+  }
+
   const handleNavigateUp = () => {
     if (calendarView === 'month') {
       setCalendarView('year')
@@ -1203,6 +1231,16 @@ export const PhoneCalendar: React.FC = () => {
       : calendarView === 'years'
         ? 'Volver al año'
         : 'Volver a vista mensual'
+  const quickReturnLabel = calendarView === 'year'
+    ? 'Mes'
+    : calendarView === 'years'
+      ? 'Año actual'
+      : 'Hoy'
+  const quickReturnAriaLabel = calendarView === 'year'
+    ? 'Ir al mes actual'
+    : calendarView === 'years'
+      ? 'Ir al año actual'
+      : 'Ir a hoy'
   const showCalendarSurface = calendarView !== 'day'
   const showAgenda = calendarView === 'month'
   const nowInCalendar = toDateInTimeZone(new Date().toISOString(), timezone) ?? new Date()
@@ -1246,59 +1284,63 @@ export const PhoneCalendar: React.FC = () => {
   return (
     <main className={styles.phonePage} data-calendar-view={calendarView} aria-label="Calendario móvil de Ristak">
       <PhonePageTransition active="calendar" className={styles.phoneFrame}>
-	        <header className={styles.header}>
-	          <div className={styles.headerToolbar}>
-	            <button
-	              type="button"
-	              className={styles.periodChip}
-	              onClick={handleNavigateUp}
-	              aria-label={periodChipAriaLabel}
-	            >
-	              {calendarView !== 'years' && <ChevronLeft size={21} />}
-	              <span>{periodChipLabel}</span>
-	            </button>
+        <header className={styles.header}>
+          <div className={styles.headerToolbar}>
+            {calendarView === 'years' ? (
+              <span className={styles.periodChipPlaceholder} aria-hidden="true" />
+            ) : (
+              <button
+                type="button"
+                className={styles.periodChip}
+                onClick={handleNavigateUp}
+                aria-label={periodChipAriaLabel}
+              >
+                <ChevronLeft size={21} />
+                <span>{periodChipLabel}</span>
+              </button>
+            )}
 
-	            <div className={styles.tabletViewSwitcher} role="tablist" aria-label="Vista de calendario">
-	              {TABLET_VIEW_OPTIONS.map(({ view, label }) => {
-	                const active = calendarView === view || (calendarView === 'years' && view === 'year')
+            <div className={styles.tabletViewSwitcher} role="tablist" aria-label="Vista de calendario">
+              {TABLET_VIEW_OPTIONS.map(({ view, label }) => {
+                const active = calendarView === view || (calendarView === 'years' && view === 'year')
 
-	                return (
-	                  <button
-	                    key={view}
-	                    type="button"
-	                    role="tab"
-	                    aria-selected={active}
-	                    className={active ? styles.tabletViewSwitcherActive : ''}
-	                    onClick={() => handleSelectCalendarView(view)}
-	                  >
-	                    {label}
-	                  </button>
-	                )
-	              })}
-	            </div>
+                return (
+                  <button
+                    key={view}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={active ? styles.tabletViewSwitcherActive : ''}
+                    onClick={() => handleSelectCalendarView(view)}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
 
-	            <div className={styles.headerCapsule} aria-label="Acciones rápidas">
-	              <button type="button" className={styles.todayTopButton} onClick={handleToday} aria-label="Hoy">
-	                Hoy
-	              </button>
-	              <button type="button" onClick={() => setSheetView('calendar')} aria-label="Calendarios">
-	                <CalendarDays size={22} />
-	              </button>
-	              <button type="button" onClick={openAppointmentContactPicker} aria-label="Crear cita">
-	                <Plus size={25} />
-	              </button>
-	            </div>
-	          </div>
+            <div className={styles.headerCapsule} aria-label="Acciones rápidas">
+              <button type="button" className={styles.todayTopButton} onClick={handleQuickReturn} aria-label={quickReturnAriaLabel}>
+                {quickReturnLabel}
+              </button>
+              <button type="button" onClick={() => setSheetView('calendar')} aria-label="Calendarios">
+                <CalendarDays size={22} />
+              </button>
+              <button type="button" onClick={openAppointmentContactPicker} aria-label="Crear cita">
+                <Plus size={25} />
+              </button>
+            </div>
+          </div>
 
-	          <div className={styles.titleRow} data-calendar-view={calendarView}>
-	            <button type="button" className={styles.titleButton} onClick={handleNavigateUp}>
-	              <h1>{viewTitle}</h1>
-	              {viewSubtitle && <p>{viewSubtitle}</p>}
-	            </button>
-	          </div>
-	        </header>
+          <div className={styles.titleRow} data-calendar-view={calendarView}>
+            <button type="button" className={styles.titleButton} onClick={handleNavigateUp}>
+              <h1>{viewTitle}</h1>
+              {viewSubtitle && <p>{viewSubtitle}</p>}
+            </button>
+          </div>
+        </header>
 
-	        {showCalendarSurface && (
+        {showCalendarSurface && (
 	          <section
 	            className={styles.calendarSurface}
 	            aria-label={selectedViewLabel}
