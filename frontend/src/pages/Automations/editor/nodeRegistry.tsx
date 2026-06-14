@@ -290,6 +290,8 @@ export interface NodeDefinition {
   outputs: (config: Record<string, unknown>) => NodeOutputHandle[]
   /** Sin conector de entrada (comentarios) */
   noInput?: boolean
+  /** Disponible para flujos existentes, pero no aparece al agregar pasos nuevos */
+  hiddenFromPicker?: boolean
   /** Validación específica además de los campos requeridos */
   validate?: (config: Record<string, unknown>) => string[]
   /** Datos que este bloque puede exponer como variables para pasos posteriores */
@@ -1320,11 +1322,11 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
       customFields: []
     }),
     fields: [
-      { key: 'firstName', label: 'Nombre', type: 'text', placeholder: '{{nombre}}', showVariables: true },
-      { key: 'lastName', label: 'Apellido', type: 'text', placeholder: '{{apellido}}' },
-      { key: 'phone', label: 'Teléfono', type: 'text', placeholder: '{{telefono}}', required: true },
-      { key: 'email', label: 'Email (dato de contacto, opcional)', type: 'text', placeholder: '{{email}}' },
-      { key: 'source', label: 'Fuente (opcional)', type: 'text', placeholder: 'Ej. automatización' },
+      { key: 'firstName', label: 'Nombre', type: 'text', placeholder: '{{contact.first_name}}', showVariables: true },
+      { key: 'lastName', label: 'Apellido', type: 'text', placeholder: '{{contact.last_name}}', showVariables: true },
+      { key: 'phone', label: 'Teléfono', type: 'text', placeholder: '{{contact.phone}}', required: true, showVariables: true },
+      { key: 'email', label: 'Email (dato de contacto, opcional)', type: 'text', placeholder: '{{contact.email}}', showVariables: true },
+      { key: 'source', label: 'Fuente (opcional)', type: 'text', placeholder: '{{automation.name}}', showVariables: true },
       { key: 'tags', label: 'Etiquetas iniciales', type: 'catalogTags', catalog: 'tags' },
       { key: 'assignedUser', label: 'Usuario asignado (opcional)', type: 'catalogSelect', catalog: 'users', advanced: true },
       { key: 'customFields', label: 'Campos personalizados', type: 'customFieldValues' }
@@ -1359,7 +1361,7 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
     icon: UserSearch,
     accent: 'blue',
     addButtonLabel: 'Configurar búsqueda',
-    defaultConfig: () => ({ searchBy: 'phone', customKey: '', notFound: 'continue' }),
+    defaultConfig: () => ({ searchBy: '', lookupValue: '', notFound: 'continue' }),
     fields: [
       {
         key: 'searchBy',
@@ -1369,21 +1371,23 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
         options: [
           { value: 'phone', label: 'Teléfono' },
           { value: 'email', label: 'Email (dato de contacto)' },
-          { value: 'id', label: 'ID del contacto' },
-          { value: 'custom', label: 'Campo personalizado' }
+          { value: 'id', label: 'ID del contacto' }
         ]
       },
       {
-        key: 'customKey',
-        label: 'Campo personalizado',
-        type: 'catalogSelect',
-        catalog: 'customFields',
-        showIf: (config) => str(config.searchBy) === 'custom'
+        key: 'lookupValue',
+        label: 'Valor a buscar',
+        type: 'text',
+        placeholder: '{{contact.phone}}',
+        required: true,
+        showVariables: true,
+        showIf: (config) => Boolean(str(config.searchBy))
       },
       {
         key: 'notFound',
         label: 'Si no existe el contacto',
         type: 'select',
+        showIf: (config) => Boolean(str(config.searchBy)) && Boolean(str(config.lookupValue)),
         options: [
           { value: 'continue', label: 'Continuar normalmente' },
           { value: 'create', label: 'Crear el contacto' },
@@ -1405,17 +1409,21 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
       fields: CONTACT_OUTPUT_FIELDS
     }),
     validate: (config) =>
-      str(config.searchBy) === 'custom' && !str(config.customKey)
-        ? ['Selecciona el campo personalizado de búsqueda']
+      str(config.searchBy) && !str(config.lookupValue).trim()
+        ? ['Indica de dónde sale el dato para buscar el contacto']
         : [],
     summary: (config) => {
       const labels: Record<string, string> = {
         phone: 'teléfono',
         email: 'email',
-        id: 'ID',
-        custom: 'campo personalizado'
+        id: 'ID'
       }
-      return { text: `Busca el contacto por ${labels[str(config.searchBy)] || 'teléfono'}` }
+      const searchBy = str(config.searchBy)
+      const value = str(config.lookupValue)
+      return {
+        text: searchBy ? `Busca por ${labels[searchBy] || 'teléfono'}${value ? `: ${value}` : ''}` : undefined,
+        empty: 'Elige cómo encontrar el contacto'
+      }
     }
   },
   {
@@ -1478,12 +1486,52 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
     }
   },
   {
+    type: 'action-contact-tag',
+    kind: 'action',
+    label: 'Añadir / eliminar etiqueta',
+    category: 'action-contacts',
+    icon: Tags,
+    accent: 'blue',
+    addButtonLabel: 'Configurar etiqueta',
+    defaultConfig: () => ({ tagAction: '', tag: '' }),
+    fields: [
+      {
+        key: 'tagAction',
+        label: 'Qué quieres hacer',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'add', label: 'Añadir etiqueta' },
+          { value: 'remove', label: 'Eliminar etiqueta' }
+        ]
+      },
+      {
+        key: 'tag',
+        label: 'Etiqueta',
+        type: 'catalogSelect',
+        catalog: 'tags',
+        required: true,
+        showIf: (config) => Boolean(str(config.tagAction))
+      }
+    ],
+    outputs: () => SINGLE_OUTPUT,
+    summary: (config) => {
+      const name = str(config.tagName) || str(config.tag)
+      const action = str(config.tagAction) === 'remove' ? 'Eliminar' : 'Añadir'
+      return {
+        text: name && str(config.tagAction) ? `${action} etiqueta: ${name}` : undefined,
+        empty: 'Elige si vas a añadir o eliminar una etiqueta'
+      }
+    }
+  },
+  {
     type: 'action-add-contact-tag',
     kind: 'action',
     label: 'Añadir etiqueta de contacto',
     category: 'action-contacts',
     icon: Tags,
     accent: 'blue',
+    hiddenFromPicker: true,
     addButtonLabel: 'Seleccionar etiqueta',
     defaultConfig: () => ({ tag: '' }),
     fields: [
@@ -1502,6 +1550,7 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
     category: 'action-contacts',
     icon: Tags,
     accent: 'blue',
+    hiddenFromPicker: true,
     addButtonLabel: 'Seleccionar etiqueta',
     defaultConfig: () => ({ tag: '' }),
     fields: [
@@ -1514,12 +1563,52 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
     })
   },
   {
+    type: 'action-contact-user',
+    kind: 'action',
+    label: 'Añadir / eliminar usuario asignado',
+    category: 'action-contacts',
+    icon: UserCheck,
+    accent: 'blue',
+    addButtonLabel: 'Configurar usuario',
+    defaultConfig: () => ({ userAction: '', user: '' }),
+    fields: [
+      {
+        key: 'userAction',
+        label: 'Qué quieres hacer',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'assign', label: 'Añadir usuario asignado' },
+          { value: 'unassign', label: 'Eliminar usuario asignado' }
+        ]
+      },
+      {
+        key: 'user',
+        label: 'Usuario',
+        type: 'catalogSelect',
+        catalog: 'users',
+        required: true,
+        showIf: (config) => str(config.userAction) === 'assign'
+      }
+    ],
+    outputs: () => SINGLE_OUTPUT,
+    summary: (config) => {
+      if (str(config.userAction) === 'unassign') return { text: 'Eliminar usuario asignado del contacto' }
+      const user = str(config.userName) || str(config.user)
+      return {
+        text: user && str(config.userAction) ? `Asignar a ${user}` : undefined,
+        empty: 'Elige si vas a añadir o eliminar un usuario'
+      }
+    }
+  },
+  {
     type: 'action-assign-user',
     kind: 'action',
     label: 'Asignar al usuario',
     category: 'action-contacts',
     icon: UserCheck,
     accent: 'blue',
+    hiddenFromPicker: true,
     addButtonLabel: 'Seleccionar usuario',
     defaultConfig: () => ({ strategy: 'specific', user: '' }),
     fields: [
@@ -1560,6 +1649,7 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
     category: 'action-contacts',
     icon: UserMinus,
     accent: 'blue',
+    hiddenFromPicker: true,
     addButtonLabel: 'Configurar acción',
     defaultConfig: () => ({ leaveUnowned: true }),
     fields: [
@@ -2105,6 +2195,7 @@ const OTHER_ACTIONS: NodeDefinition[] = [
     description: 'Permite que la IA gestione las conversaciones por ti',
     icon: Sparkles,
     accent: 'dark',
+    hiddenFromPicker: true,
     tintedHeader: true,
     addButtonLabel: 'Configurar IA',
     allowedChannels: [...ALLOWED_CHANNELS, 'any'],
@@ -2419,17 +2510,28 @@ const OTHER_ACTIONS: NodeDefinition[] = [
   {
     type: 'extra-comment',
     kind: 'action',
-    label: 'Comentario',
+    label: 'Post-it',
     category: 'action-extras',
     description: 'Nota interna visible en el canvas',
     icon: StickyNote,
     accent: 'yellow',
     tintedHeader: true,
-    addButtonLabel: 'Escribir comentario',
+    addButtonLabel: 'Escribir nota',
     noInput: true,
-    defaultConfig: () => ({ text: '' }),
+    defaultConfig: () => ({ text: '', color: 'yellow' }),
     fields: [
-      { key: 'text', label: 'Nota', type: 'textarea', placeholder: 'Escribe una nota para tu equipo…' }
+      { key: 'text', label: 'Nota', type: 'textarea', placeholder: 'Escribe una nota para tu equipo…' },
+      {
+        key: 'color',
+        label: 'Color',
+        type: 'select',
+        options: [
+          { value: 'yellow', label: 'Amarillo' },
+          { value: 'pink', label: 'Rosa' },
+          { value: 'blue', label: 'Azul' },
+          { value: 'green', label: 'Verde' }
+        ]
+      }
     ],
     outputs: () => [],
     summary: (config) => ({
@@ -2478,7 +2580,7 @@ export function getNodeDefinition(type: string): NodeDefinition | undefined {
 }
 
 export function getDefinitionsByKind(kind: NodeKind): NodeDefinition[] {
-  return NODE_DEFINITIONS.filter((definition) => definition.kind === kind)
+  return NODE_DEFINITIONS.filter((definition) => definition.kind === kind && !definition.hiddenFromPicker)
 }
 
 export function getCategoriesForKind(kind: NodeKind): NodeCategory[] {

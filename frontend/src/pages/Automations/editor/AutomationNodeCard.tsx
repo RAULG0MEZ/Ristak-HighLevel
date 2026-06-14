@@ -118,6 +118,11 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
   const configErrors = !isStart && definition ? validateNodeConfig(definition, config) : []
   const configured = configErrors.length === 0
   const hasErrors = Boolean(errors && errors.length > 0)
+  const isPostIt = node.type === 'extra-comment'
+  const postItColor =
+    typeof config.color === 'string' && ['yellow', 'pink', 'blue', 'green'].includes(config.color)
+      ? config.color
+      : 'yellow'
 
   // ------------------------------------------------------------------
   // Título editable (doble clic · máx. 80 caracteres · vacío = default)
@@ -165,8 +170,10 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
       ref={rootRef}
       data-automation-node={node.id}
       data-accent={accent}
+      data-post-it-color={isPostIt ? postItColor : undefined}
       className={cn(
         styles.node,
+        isPostIt && styles.postItNode,
         isStart && styles.startCard,
         selected && styles.nodeSelected,
         hasErrors && styles.nodeError,

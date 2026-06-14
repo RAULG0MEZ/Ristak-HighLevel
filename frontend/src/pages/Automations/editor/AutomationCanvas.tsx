@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   MoreHorizontal,
   Shuffle,
+  StickyNote,
   Target,
   Maximize,
   Minus,
@@ -91,6 +92,8 @@ export interface CanvasActions {
   onClearSelection: () => void
   /** Botón "Ordenar flujo" (recibe las alturas medidas de los nodos) */
   onAutoLayout: (heights: Record<string, number>) => void
+  /** Crea un post-it en el centro visible del canvas */
+  onAddStickyNote: (position: { x: number; y: number }) => void
 }
 
 interface AutomationCanvasProps {
@@ -598,6 +601,15 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
     actions.onAutoLayout(heights)
   }
 
+  const handleAddStickyNote = () => {
+    const viewport = viewportRef.current
+    const bounds = getBounds()
+    actions.onAddStickyNote({
+      x: (bounds.width / 2 - viewport.x) / viewport.zoom - NODE_WIDTH / 2,
+      y: (bounds.height / 2 - viewport.y) / viewport.zoom - 70
+    })
+  }
+
   // ------------------------------------------------------------------
   // Geometría de las conexiones
   // ------------------------------------------------------------------
@@ -957,26 +969,36 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
           </div>
         )}
 
-        {/* Controles de zoom + ordenar flujo */}
-        <div className={styles.zoomControls} onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
-          <button type="button" className={styles.zoomButton} title="Acercar" onClick={() => zoomBy(1.2)}>
-            <Plus size={14} />
-          </button>
-          <span className={styles.zoomLevel}>{Math.round(viewport.zoom * 100)}%</span>
-          <button type="button" className={styles.zoomButton} title="Alejar" onClick={() => zoomBy(1 / 1.2)}>
-            <Minus size={14} />
-          </button>
-          <button type="button" className={styles.zoomButton} title="Centrar flujo" onClick={fitView}>
-            <Maximize size={13} />
-          </button>
+        {/* Herramientas del canvas */}
+        <div className={styles.canvasTools} onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
           <button
             type="button"
-            className={styles.zoomButton}
-            title="Ordenar flujo (alinea los pasos de izquierda a derecha)"
-            onClick={handleAutoLayout}
+            className={styles.canvasToolButton}
+            title="Agregar post-it"
+            onClick={handleAddStickyNote}
           >
-            <LayoutGrid size={13} />
+            <StickyNote size={14} />
           </button>
+          <div className={styles.zoomControls}>
+            <button type="button" className={styles.zoomButton} title="Acercar" onClick={() => zoomBy(1.2)}>
+              <Plus size={14} />
+            </button>
+            <span className={styles.zoomLevel}>{Math.round(viewport.zoom * 100)}%</span>
+            <button type="button" className={styles.zoomButton} title="Alejar" onClick={() => zoomBy(1 / 1.2)}>
+              <Minus size={14} />
+            </button>
+            <button type="button" className={styles.zoomButton} title="Centrar flujo" onClick={fitView}>
+              <Maximize size={13} />
+            </button>
+            <button
+              type="button"
+              className={styles.zoomButton}
+              title="Ordenar flujo (alinea los pasos de izquierda a derecha)"
+              onClick={handleAutoLayout}
+            >
+              <LayoutGrid size={13} />
+            </button>
+          </div>
         </div>
 
         {children}

@@ -337,12 +337,14 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
                   value={str(row.key)}
                   onChange={(event) => updateRow(index, { key: event.target.value })}
                 />
-                <TextInput
-                  className={styles.configRowGrow}
-                  placeholder="Valor"
-                  value={str(row.value)}
-                  onChange={(event) => updateRow(index, { value: event.target.value })}
-                />
+                <div className={styles.configRowGrow}>
+                  <VariableTextInput
+                    value={str(row.value)}
+                    placeholder="Valor"
+                    aria-label={`Valor del campo personalizado ${index + 1}`}
+                    onChange={(compiled) => updateRow(index, { value: compiled })}
+                  />
+                </div>
                 <button
                   type="button"
                   className={styles.configIconButton}
@@ -385,12 +387,14 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
                     aria-label="Campo personalizado"
                   />
                 </div>
-                <TextInput
-                  className={styles.configRowGrow}
-                  placeholder="Valor"
-                  value={str(row.value)}
-                  onChange={(event) => updateRow(index, { value: event.target.value })}
-                />
+                <div className={styles.configRowGrow}>
+                  <VariableTextInput
+                    placeholder="Valor"
+                    value={str(row.value)}
+                    onChange={(compiled) => updateRow(index, { value: compiled })}
+                    aria-label="Valor del campo personalizado"
+                  />
+                </div>
                 <button
                   type="button"
                   className={styles.configIconButton}

@@ -26,6 +26,19 @@ test('renderTemplate reemplaza variables del contacto y la conversación', () =>
   assert.equal(renderTemplate('{{desconocida.x}}', ctx), '')
 })
 
+test('renderTemplate resuelve payloads de webhook con objetos y arrays anidados', () => {
+  const payload = {
+    categories: [
+      { name: 'Trabajo', items: ['Reunión', 'Email'] },
+      { name: 'Salud', items: ['Agua', 'Ejercicio'] }
+    ],
+    mixed: ['texto', { deep: { value: 7 } }]
+  }
+  assert.equal(renderTemplate('{{webhook.categories[0].name}}', { payload }), 'Trabajo')
+  assert.equal(renderTemplate('{{webhook.categories[1].items[1]}}', { payload }), 'Ejercicio')
+  assert.equal(renderTemplate('{{webhook.mixed[1].deep.value}}', { payload }), '7')
+})
+
 test('filtersMatch: coincide / NO coincide / contiene / NO contiene', () => {
   assert.equal(filtersMatch([{ field: 'source', match: 'is', value: 'facebook' }], ctx), true)
   assert.equal(filtersMatch([{ field: 'source', match: 'not', value: 'Facebook' }], ctx), false)
@@ -208,6 +221,107 @@ test('logic-wait por clic de disparo reanuda cuando llega el trigger link config
     assert.equal(enrollment.current_node_id, 'done')
     const log = JSON.parse(enrollment.log)
     assert.equal(log.some((entry) => String(entry.detail || '').includes('Clic de disparo recibido')), true)
+  } finally {
+    await db.run('DELETE FROM automation_enrollments WHERE automation_id = ?', [automationId])
+    await db.run('DELETE FROM automations WHERE id = ?', [automationId])
+    await db.run('DELETE FROM contacts WHERE id = ?', [contactId])
+  }
+})
+
+test('webhook encuentra contacto por valor mapeado y asigna usuario', async () => {
+  const suffix = randomUUID()
+  const contactId = `rstk_contact_webhook_find_${suffix}`
+  const automationId = `automation_webhook_find_${suffix}`
+  const endpointId = `hook_${suffix}`
+  const email = `webhook-find-${suffix}@example.com`
+  const assignedUser = `user_${suffix}`
+  const flow = {
+    nodes: [
+      {
+        id: 'start',
+        type: 'start',
+        label: 'Cuando...',
+        config: {
+          triggers: [
+            {
+              id: 'trigger-webhook',
+              type: 'trigger-incoming-webhook',
+              config: { endpointId }
+            }
+          ]
+        }
+      },
+      {
+        id: 'find-contact',
+        type: 'action-find-contact',
+        label: 'Encontrar contacto',
+        config: {
+          searchBy: 'email',
+          lookupValue: '{{webhook.contacts[0].email}}',
+          notFound: 'stop'
+        }
+      },
+      {
+        id: 'assign-user',
+        type: 'action-contact-user',
+        label: 'Añadir / eliminar usuario asignado',
+        config: {
+          userAction: 'assign',
+          user: assignedUser,
+          userName: 'Ventas'
+        }
+      }
+    ],
+    edges: [
+      { id: 'edge-start-find', sourceNodeId: 'start', targetNodeId: 'find-contact' },
+      { id: 'edge-find-assign', sourceNodeId: 'find-contact', sourceHandle: 'out', targetNodeId: 'assign-user' }
+    ],
+    settings: {}
+  }
+
+  try {
+    await db.run(
+      `INSERT INTO contacts (id, phone, email, full_name, first_name, custom_fields)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        contactId,
+        `+1555${Date.now().toString().slice(-8)}`,
+        email,
+        'Contacto Webhook',
+        'Contacto',
+        '{}'
+      ]
+    )
+    await db.run(
+      `INSERT INTO automations (id, name, status, flow, published_flow, published_at)
+       VALUES (?, ?, 'published', ?, ?, CURRENT_TIMESTAMP)`,
+      [automationId, 'Test webhook find', JSON.stringify(flow), JSON.stringify(flow)]
+    )
+
+    await handleAutomationEvent('webhook-received', {
+      endpointId,
+      payload: {
+        contacts: [
+          {
+            email,
+            categories: [
+              { name: 'Trabajo', items: ['Reunión', 'Email'] }
+            ]
+          }
+        ]
+      }
+    })
+
+    const contact = await db.get('SELECT custom_fields FROM contacts WHERE id = ?', [contactId])
+    const customFields = JSON.parse(contact.custom_fields)
+    assert.equal(customFields.assignedUser, assignedUser)
+    assert.equal(customFields.assignedUserName, 'Ventas')
+
+    const enrollment = await db.get('SELECT * FROM automation_enrollments WHERE automation_id = ?', [automationId])
+    assert.equal(enrollment.status, 'completed')
+    assert.equal(enrollment.contact_id, contactId)
+    const log = JSON.parse(enrollment.log)
+    assert.equal(log.some((entry) => String(entry.detail || '').includes('Contacto encontrado')), true)
   } finally {
     await db.run('DELETE FROM automation_enrollments WHERE automation_id = ?', [automationId])
     await db.run('DELETE FROM automations WHERE id = ?', [automationId])

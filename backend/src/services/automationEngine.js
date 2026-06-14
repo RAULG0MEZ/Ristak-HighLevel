@@ -2,6 +2,12 @@ import crypto from 'crypto'
 import { db } from '../config/database.js'
 import { logger } from '../utils/logger.js'
 import { buildTagMatchKeys, resolveTagIds, tagNamesForIds } from './contactTagsService.js'
+import {
+  findContactByPhoneCandidates,
+  finalizePreparedPhoneUpsert,
+  generateContactId,
+  prepareContactPhoneUpsert
+} from './contactIdentityService.js'
 
 /**
  * Motor de ejecución de automatizaciones.
@@ -41,8 +47,94 @@ function str(value) {
   return typeof value === 'string' ? value : ''
 }
 
+function cleanString(value) {
+  return String(value ?? '').trim()
+}
+
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function customFieldsBag(raw) {
+  const parsed = parseJson(raw, raw)
+  if (Array.isArray(parsed)) {
+    return parsed.reduce((bag, field) => {
+      if (!isPlainObject(field)) return bag
+      const key = cleanString(field.key || field.fieldKey || field.field_key || field.id || field.label || field.name)
+      if (!key) return bag
+      const value = Object.prototype.hasOwnProperty.call(field, 'value')
+        ? field.value
+        : Object.prototype.hasOwnProperty.call(field, 'fieldValue')
+          ? field.fieldValue
+          : Object.prototype.hasOwnProperty.call(field, 'field_value')
+            ? field.field_value
+            : ''
+      bag[key] = value
+      return bag
+    }, {})
+  }
+  if (isPlainObject(parsed)) {
+    return Object.entries(parsed).reduce((bag, [key, value]) => {
+      bag[key] = isPlainObject(value) && Object.prototype.hasOwnProperty.call(value, 'value') ? value.value : value
+      return bag
+    }, {})
+  }
+  return {}
+}
+
+function setDeepVariable(map, prefix, value) {
+  if (value === null || value === undefined) {
+    map[prefix] = ''
+    return
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) map[prefix] = ''
+    value.forEach((child, index) => setDeepVariable(map, `${prefix}[${index}]`, child))
+    return
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value)
+    if (entries.length === 0) map[prefix] = ''
+    entries.forEach(([key, child]) => setDeepVariable(map, `${prefix}.${key}`, child))
+    return
+  }
+  map[prefix] = String(value)
+}
+
+function pathSegments(path) {
+  const segments = []
+  const pattern = /([^[.\]]+)|\[(\d+)\]/g
+  let match
+  while ((match = pattern.exec(path))) {
+    segments.push(match[1] !== undefined ? match[1] : Number(match[2]))
+  }
+  return segments
+}
+
+function readPath(source, path) {
+  if (!path) return source
+  let current = source
+  for (const segment of pathSegments(path)) {
+    if (current === null || current === undefined) return undefined
+    current = current[segment]
+  }
+  return current
+}
+
+function resolveDynamicToken(token, ctx) {
+  if (!token) return undefined
+  const webhookRoot = token.match(/^(webhook(?:_\d+)?)(.*)$/)
+  if (webhookRoot && (webhookRoot[2] === '' || webhookRoot[2].startsWith('.') || webhookRoot[2].startsWith('['))) {
+    const payload = ctx.payload ?? ctx.webhook ?? {}
+    const rest = webhookRoot[2]
+    const path = rest.startsWith('.') ? rest.slice(1) : rest
+    return readPath(payload, path)
+  }
+  return readPath(ctx, token)
 }
 
 function triggerLinkCandidateValues(ctx = {}) {
@@ -133,13 +225,20 @@ function buildVariableMap(ctx) {
     map[`custom.${key}`] = String(value ?? '')
     if (map[key] === undefined) map[key] = String(value ?? '')
   })
+  if (ctx.payload && typeof ctx.payload === 'object') {
+    setDeepVariable(map, 'webhook', ctx.payload)
+    setDeepVariable(map, 'webhook_1', ctx.payload)
+  }
   return map
 }
 
 export function renderTemplate(text, ctx, { preserveUnknown = false } = {}) {
   const map = buildVariableMap(ctx)
-  return String(text || '').replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (match, token) => {
+  return String(text || '').replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (match, rawToken) => {
+    const token = cleanString(rawToken)
     if (map[token] !== undefined) return map[token]
+    const dynamic = resolveDynamicToken(token, ctx)
+    if (dynamic !== undefined) return typeof dynamic === 'object' ? JSON.stringify(dynamic) : String(dynamic ?? '')
     return preserveUnknown ? match : ''
   })
 }
@@ -430,6 +529,7 @@ async function saveEnrollment(enrollment) {
   await db.run(
     `UPDATE automation_enrollments
      SET status = ?, current_node_id = ?, log = ?, resume_at = ?, wait_kind = ?, context = ?,
+         contact_id = COALESCE(?, contact_id), contact_name = COALESCE(?, contact_name),
          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
     [
@@ -439,6 +539,8 @@ async function saveEnrollment(enrollment) {
       enrollment.resumeAt || null,
       enrollment.waitKind || null,
       JSON.stringify(enrollment.context || {}),
+      enrollment.contactId || null,
+      enrollment.contactName || null,
       enrollment.id
     ]
   )
@@ -454,6 +556,8 @@ async function createEnrollment(automation, contact, ctx) {
   const enrollment = {
     id,
     automationId: automation.id,
+    contactId: contact.id || null,
+    contactName: contact.fullName || contact.phone || contact.email || 'Contacto',
     status: 'active',
     currentNodeId: 'start',
     log: [],
@@ -472,14 +576,15 @@ async function createEnrollment(automation, contact, ctx) {
       referrer: ctx.referrer || null,
       eventId: ctx.eventId || null,
       clickedAt: ctx.clickedAt || null,
-      query: ctx.query || null
+      query: ctx.query || null,
+      payload: ctx.payload || null
     }
   }
   await db.run(
     `INSERT INTO automation_enrollments
        (id, automation_id, contact_id, contact_name, status, current_node_id, log, context)
      VALUES (?, ?, ?, ?, 'active', 'start', '[]', ?)`,
-    [id, automation.id, contact.id || null, contact.fullName || contact.phone || 'Contacto', JSON.stringify(enrollment.context)]
+    [id, automation.id, enrollment.contactId, enrollment.contactName, JSON.stringify(enrollment.context)]
   )
   return enrollment
 }
@@ -525,6 +630,211 @@ async function applyTagAction(node, ctx, remove) {
     }).catch(() => undefined)
   })
   return remove ? `Etiqueta "${displayName}" quitada` : `Etiqueta "${displayName}" añadida`
+}
+
+function renderedConfigValue(value, ctx) {
+  return renderTemplate(str(value), ctx).trim()
+}
+
+function compactName(firstName, lastName, fallback = '') {
+  return [firstName, lastName].map((part) => str(part).trim()).filter(Boolean).join(' ') || str(fallback).trim()
+}
+
+function objectFromCustomFields(value) {
+  return customFieldsBag(value)
+}
+
+function customFieldRowsToObject(rows, ctx) {
+  const values = {}
+  if (!Array.isArray(rows)) return values
+  rows.forEach((row) => {
+    const key = str(row?.key).trim()
+    if (!key) return
+    values[key] = renderedConfigValue(row?.value, ctx)
+  })
+  return values
+}
+
+async function findContactByLookup(searchBy, lookupValue) {
+  const value = str(lookupValue).trim()
+  if (!value) return null
+  if (searchBy === 'phone') {
+    return findContactByPhoneCandidates(value)
+  }
+  if (searchBy === 'email') {
+    return db.get('SELECT * FROM contacts WHERE LOWER(email) = LOWER(?) LIMIT 1', [value])
+  }
+  if (searchBy === 'id') {
+    return db.get('SELECT * FROM contacts WHERE id = ? LIMIT 1', [value])
+  }
+  return null
+}
+
+function defaultLookupValueFor(searchBy, ctx) {
+  if (searchBy === 'phone') return ctx.contact?.phone || ''
+  if (searchBy === 'email') return ctx.contact?.email || ''
+  if (searchBy === 'id') return ctx.contact?.id || ''
+  return ''
+}
+
+async function applyContactTags(contactId, tags) {
+  const configured = Array.isArray(tags) ? tags.map(str).filter(Boolean) : []
+  if (!contactId || configured.length === 0) return []
+  const tagIds = await resolveTagIds(configured, { createMissing: true })
+  const row = await db.get('SELECT tags FROM contacts WHERE id = ?', [contactId])
+  const current = parseJson(row?.tags, [])
+  const list = Array.isArray(current) ? current : []
+  const next = [...new Set([...list, ...tagIds].filter(Boolean))]
+  await db.run('UPDATE contacts SET tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [
+    JSON.stringify(next),
+    contactId
+  ])
+  return next
+}
+
+async function upsertContactFromConfig(config, ctx, overrides = {}) {
+  const firstName = renderedConfigValue(overrides.firstName ?? config.firstName, ctx)
+  const lastName = renderedConfigValue(overrides.lastName ?? config.lastName, ctx)
+  const phone = renderedConfigValue(overrides.phone ?? config.phone, ctx)
+  const email = renderedConfigValue(overrides.email ?? config.email, ctx)
+  const source = renderedConfigValue(overrides.source ?? config.source, ctx)
+  const fullName = compactName(firstName, lastName, overrides.fullName ?? config.fullName)
+  const customFields = {
+    ...customFieldRowsToObject(config.customFields, ctx),
+    ...objectFromCustomFields(overrides.customFields)
+  }
+
+  let contactId = str(overrides.id || config.contactId).trim()
+  let existing = contactId ? await db.get('SELECT * FROM contacts WHERE id = ?', [contactId]) : null
+  if (!existing && phone) existing = await findContactByLookup('phone', phone)
+  if (!existing && email) existing = await findContactByLookup('email', email)
+  if (existing?.id) {
+    contactId = existing.id
+    existing = await db.get('SELECT * FROM contacts WHERE id = ?', [contactId])
+  }
+  if (!contactId) contactId = generateContactId()
+
+  const preparedPhone = await prepareContactPhoneUpsert({ contactId, phone })
+  const resolvedPhone = preparedPhone.phone || null
+  const existingCustom = objectFromCustomFields(existing?.custom_fields)
+  const nextCustom = { ...existingCustom, ...customFields }
+  const assignedUser = str(config.assignedUser)
+  if (assignedUser) {
+    nextCustom.assignedUser = assignedUser
+    if (str(config.assignedUserName)) nextCustom.assignedUserName = str(config.assignedUserName)
+  }
+  const customJson = JSON.stringify(nextCustom)
+  const customFieldsPlaceholder = process.env.DATABASE_URL ? '?::jsonb' : '?'
+
+  if (existing) {
+    await db.run(
+      `UPDATE contacts
+       SET phone = COALESCE(?, phone),
+           email = COALESCE(?, email),
+           full_name = COALESCE(?, full_name),
+           first_name = COALESCE(?, first_name),
+           last_name = COALESCE(?, last_name),
+           source = COALESCE(?, source),
+           custom_fields = ${customFieldsPlaceholder},
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [
+        resolvedPhone,
+        email || null,
+        fullName || null,
+        firstName || null,
+        lastName || null,
+        source || null,
+        customJson,
+        contactId
+      ]
+    )
+  } else {
+    await db.run(
+      `INSERT INTO contacts
+       (id, phone, email, full_name, first_name, last_name, source, custom_fields, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ${customFieldsPlaceholder}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [
+        contactId,
+        resolvedPhone,
+        email || null,
+        fullName || null,
+        firstName || null,
+        lastName || null,
+        source || null,
+        customJson
+      ]
+    )
+  }
+
+  contactId = await finalizePreparedPhoneUpsert(preparedPhone, contactId)
+  await applyContactTags(contactId, config.tags)
+  ctx.contact = await loadContact(contactId, ctx.contact || {})
+  return ctx.contact
+}
+
+async function executeCreateContact(node, ctx) {
+  const contact = await upsertContactFromConfig(node.config || {}, ctx)
+  return contact.fullName || contact.phone || contact.email
+    ? `Contacto listo: ${contact.fullName || contact.phone || contact.email}`
+    : 'Contacto creado'
+}
+
+async function executeFindContact(node, ctx) {
+  const config = node.config || {}
+  const searchBy = str(config.searchBy) || 'phone'
+  const lookupValue = renderedConfigValue(config.lookupValue || defaultLookupValueFor(searchBy, ctx), ctx)
+  const found = await findContactByLookup(searchBy, lookupValue)
+  if (found?.id) {
+    ctx.contact = await loadContact(found.id, ctx.contact || {})
+    return { handle: 'out', detail: `Contacto encontrado: ${ctx.contact.fullName || ctx.contact.phone || ctx.contact.email || ctx.contact.id}` }
+  }
+
+  const notFound = str(config.notFound) || 'continue'
+  if (notFound === 'branch') {
+    return { handle: 'notfound', detail: 'Contacto no encontrado' }
+  }
+  if (notFound === 'stop') {
+    return { stop: true, handle: 'stop', detail: 'Contacto no encontrado: automatización detenida' }
+  }
+  if (notFound === 'create') {
+    const overrides = searchBy === 'phone'
+      ? { phone: lookupValue }
+      : searchBy === 'email'
+        ? { email: lookupValue }
+        : searchBy === 'id'
+          ? { id: lookupValue }
+          : {}
+    const contact = await upsertContactFromConfig({}, ctx, overrides)
+    return { handle: 'out', detail: `Contacto creado: ${contact.fullName || contact.phone || contact.email || contact.id}` }
+  }
+  return { handle: 'out', detail: 'Contacto no encontrado: continúa sin cambiar contacto' }
+}
+
+async function applyContactUserAction(node, ctx) {
+  if (!ctx.contact?.id) return 'Usuario no modificado (sin contacto)'
+  const config = node.config || {}
+  const remove = node.type === 'action-unassign-user' || str(config.userAction) === 'unassign'
+  const userId = str(config.user)
+  if (!remove && !userId) return 'Usuario no asignado (falta seleccionar usuario)'
+
+  const row = await db.get('SELECT custom_fields FROM contacts WHERE id = ?', [ctx.contact.id])
+  const customFields = objectFromCustomFields(row?.custom_fields)
+  if (remove) {
+    delete customFields.assignedUser
+    delete customFields.assignedUserName
+  } else {
+    customFields.assignedUser = userId
+    if (str(config.userName)) customFields.assignedUserName = str(config.userName)
+  }
+  await db.run(`UPDATE contacts SET custom_fields = ${process.env.DATABASE_URL ? '?::jsonb' : '?'}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [
+    JSON.stringify(customFields),
+    ctx.contact.id
+  ])
+  ctx.contact = await loadContact(ctx.contact.id, ctx.contact)
+  return remove
+    ? 'Usuario asignado eliminado'
+    : `Usuario asignado: ${str(config.userName) || userId}`
 }
 
 /** Envía un bloque adjunto: si es un archivo subido a Ristak se manda como
@@ -730,10 +1040,11 @@ async function executeNode(node, ctx) {
           detail: `Esperando ${config.amount} ${str(config.unit) || 'hours'}`
         }
       }
-      if (mode === 'until-datetime' && str(config.untilDatetime)) {
+      if ((mode === 'datetime' || mode === 'until-datetime') && (str(config.untilDate) || str(config.untilDatetime))) {
+        const until = str(config.untilDate) || str(config.untilDatetime)
         return {
-          wait: { kind: 'duration', resumeAt: new Date(config.untilDatetime).toISOString() },
-          detail: `Esperando hasta ${config.untilDatetime}`
+          wait: { kind: 'duration', resumeAt: new Date(until).toISOString() },
+          detail: `Esperando hasta ${until}`
         }
       }
       if (mode === 'reply') {
@@ -783,11 +1094,28 @@ async function executeNode(node, ctx) {
     case 'logic-goal':
       return { handle: 'out', detail: 'Objetivo registrado' }
 
+    case 'action-create-contact':
+      return { handle: 'out', detail: await executeCreateContact(node, ctx) }
+
+    case 'action-find-contact':
+      return executeFindContact(node, ctx)
+
+    case 'action-contact-tag':
+      return {
+        handle: 'out',
+        detail: await applyTagAction(node, ctx, str(node.config?.tagAction) === 'remove')
+      }
+
     case 'action-add-contact-tag':
       return { handle: 'out', detail: await applyTagAction(node, ctx, false) }
 
     case 'action-remove-contact-tag':
       return { handle: 'out', detail: await applyTagAction(node, ctx, true) }
+
+    case 'action-contact-user':
+    case 'action-assign-user':
+    case 'action-unassign-user':
+      return { handle: 'out', detail: await applyContactUserAction(node, ctx) }
 
     default:
       return { skipped: true, handle: 'out', detail: 'Paso aún no soportado por el motor: se omitió' }
@@ -831,12 +1159,27 @@ async function runFrom(flow, enrollment, startNodeId, ctx) {
       break
     }
 
+    if (ctx.contact?.id) {
+      enrollment.contactId = ctx.contact.id
+      enrollment.contactName =
+        ctx.contact.fullName ||
+        ctx.contact.phone ||
+        ctx.contact.email ||
+        enrollment.contactName ||
+        'Contacto'
+    }
+
     addLog(enrollment, {
       nodeId: node.id,
       label: nodeLabel(node),
       status: result.skipped ? 'skipped' : 'ok',
       detail: result.detail
     })
+
+    if (result.stop) {
+      enrollment.status = 'exited'
+      break
+    }
 
     const edge = edgesFrom(flow, node.id, result.handle)[0] || (node.type === 'start' ? edgesFrom(flow, node.id)[0] : null)
     if (!edge) {
@@ -861,8 +1204,7 @@ async function runFrom(flow, enrollment, startNodeId, ctx) {
 
 async function loadContact(contactId, fallback = {}) {
   const row = contactId ? await db.get('SELECT * FROM contacts WHERE id = ?', [contactId]) : null
-  const custom = parseJson(row?.custom_fields, {})
-  const bag = typeof custom === 'object' && custom !== null && !Array.isArray(custom) ? custom : {}
+  const bag = customFieldsBag(row?.custom_fields)
   const storedTags = (() => {
     const parsed = parseJson(row?.tags, [])
     return Array.isArray(parsed) ? parsed : []

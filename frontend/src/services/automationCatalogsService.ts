@@ -10,6 +10,7 @@ import { sitesService } from './sitesService'
 import { contactTagsService } from './contactTagsService'
 import { campaignsService, type ConnectedSocialProfile } from './campaignsService'
 import { triggerLinksService } from './triggerLinksService'
+import { userAccessService } from './userAccessService'
 
 /**
  * Catálogos de datos reales del CRM para los selectores del editor de
@@ -48,11 +49,6 @@ export type CatalogKind =
 // ---------------------------------------------------------------------------
 // Mocks marcados (catálogos sin backend todavía)
 // ---------------------------------------------------------------------------
-
-// MOCK: no existe aún un endpoint de usuarios del equipo.
-const MOCK_USERS: CatalogOption[] = [
-  { value: 'owner', label: 'Cuenta principal' }
-]
 
 // MOCK: el catálogo de productos aún no está expuesto en el frontend.
 const MOCK_PRODUCTS: CatalogOption[] = [
@@ -108,6 +104,18 @@ async function loadContactFields(): Promise<CatalogOption[]> {
     value: `custom:${field.value}`
   }))
   return [...STANDARD_CONTACT_FIELDS, ...custom]
+}
+
+async function loadUsers(): Promise<CatalogOption[]> {
+  const users = await userAccessService.listUsers()
+  return users
+    .filter((user) => user.isActive !== false)
+    .map((user) => ({
+      value: String(user.id),
+      label: user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || user.username || `Usuario ${user.id}`,
+      meta: user.email || user.role
+    }))
+    .filter((option) => option.value)
 }
 
 async function loadCalendars(): Promise<CatalogOption[]> {
@@ -279,7 +287,7 @@ async function loadWhatsAppTemplates(): Promise<CatalogOption[]> {
 
 const loaders: Record<CatalogKind, () => Promise<CatalogOption[]>> = {
   tags: loadTags,
-  users: async () => MOCK_USERS,
+  users: loadUsers,
   contactFields: loadContactFields,
   customFields: loadCustomFields,
   calendars: loadCalendars,
@@ -298,6 +306,7 @@ const loaders: Record<CatalogKind, () => Promise<CatalogOption[]>> = {
 
 const fallbacks: Partial<Record<CatalogKind, CatalogOption[]>> = {
   tags: [],
+  users: [],
   contactFields: STANDARD_CONTACT_FIELDS,
   customFields: [],
   calendars: [],

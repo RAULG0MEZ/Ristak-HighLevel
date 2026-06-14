@@ -321,6 +321,65 @@
 .node[data-accent='pink'] { --node-accent: 236, 72, 153; }
 .node[data-accent='orange'] { --node-accent: 249, 115, 22; }
 
+.postItNode {
+  width: 260px;
+  min-height: 178px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 18px 30px -20px rgba(15, 23, 42, 0.55), 0 2px 0 rgba(255, 255, 255, 0.55) inset;
+}
+
+.postItNode[data-post-it-color='yellow'] {
+  background: #fff3b0;
+  --post-it-ink: #3a2d0a;
+  --post-it-muted: rgba(58, 45, 10, 0.62);
+}
+
+.postItNode[data-post-it-color='pink'] {
+  background: #ffd6e7;
+  --post-it-ink: #4a1429;
+  --post-it-muted: rgba(74, 20, 41, 0.62);
+}
+
+.postItNode[data-post-it-color='blue'] {
+  background: #cbe7ff;
+  --post-it-ink: #10324f;
+  --post-it-muted: rgba(16, 50, 79, 0.62);
+}
+
+.postItNode[data-post-it-color='green'] {
+  background: #d8f7c5;
+  --post-it-ink: #173a14;
+  --post-it-muted: rgba(23, 58, 20, 0.62);
+}
+
+.postItNode .nodeHeader {
+  color: var(--post-it-ink);
+  background: rgba(255, 255, 255, 0.22);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.postItNode .nodeHeaderIcon {
+  background: rgba(255, 255, 255, 0.42);
+  color: var(--post-it-ink);
+}
+
+.postItNode .nodeTitle,
+.postItNode .nodeSummaryBox,
+.postItNode .nodeEmpty {
+  color: var(--post-it-ink);
+}
+
+.postItNode .nodeSummaryBox {
+  background: transparent;
+  padding: 4px 2px;
+  max-height: 150px;
+  font-size: 13px;
+}
+
+.postItNode .nodeEmpty {
+  color: var(--post-it-muted);
+}
+
 .node:hover {
   box-shadow: 0 16px 34px -16px rgba(15, 23, 42, 0.45), 0 3px 8px -2px rgba(15, 23, 42, 0.1);
 }
@@ -781,11 +840,36 @@
 
 /* --------------------------- Controles de zoom -------------------------- */
 
-.zoomControls {
+.canvasTools {
   position: absolute;
-  right: 18px;
+  left: 18px;
   bottom: 18px;
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvasToolButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  box-shadow: 0 10px 26px -16px rgba(15, 23, 42, 0.4);
+}
+
+.canvasToolButton:hover {
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--color-text-primary);
+}
+
+.zoomControls {
   display: flex;
   flex-direction: column;
   gap: 4px;

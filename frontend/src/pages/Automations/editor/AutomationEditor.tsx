@@ -1032,6 +1032,16 @@ export const AutomationEditor: React.FC = () => {
         )
         dispatch({ type: 'commit', flow: { nodes: nextNodes, edges: current.edges } })
       },
+      onAddStickyNote: (position: { x: number; y: number }) => {
+        markOpenConfigErrors()
+        setPicker(null)
+        const current = stateRef.current.present
+        const node = createNode('extra-comment', position)
+        commitFlow([...current.nodes, node], current.edges)
+        setSelectedNodeId(node.id)
+        setMultiSelectedIds(new Set([node.id]))
+        openConfigForNode(node)
+      },
       // Botón "Ordenar flujo": selección si hay varias; si no, todo el flujo
       onAutoLayout: (heights: Record<string, number>) => {
         const current = stateRef.current.present
