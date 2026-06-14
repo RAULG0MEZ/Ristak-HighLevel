@@ -3732,18 +3732,7 @@ function FormEmbedEditorPanel({
             <textarea rows={2} value={activeField.content} onChange={(event) => patchActiveField({ content: event.target.value })} onBlur={onSave} />
           </label>
 
-          <div className={styles.twoColumn}>
-            <label className={styles.field}>
-              <span>Tipo de campo</span>
-              <CustomSelect
-                value={activeField.blockType}
-                disabled={Boolean(activeFieldSystemPreset)}
-                onChange={(event) => changeActiveFieldType(event.target.value as SiteBlockType)}
-                onBlur={onSave}
-              >
-                {embeddedFormFieldTypes.map(type => <option key={type} value={type}>{blockLabels[type]}</option>)}
-              </CustomSelect>
-            </label>
+          {activeFieldSystemPreset ? (
             <label className={styles.field}>
               <span>Página</span>
               <CustomSelect
@@ -3754,7 +3743,30 @@ function FormEmbedEditorPanel({
                 {pages.map(page => <option key={page.id} value={page.id}>{page.title || 'Página'}</option>)}
               </CustomSelect>
             </label>
-          </div>
+          ) : (
+            <div className={styles.twoColumn}>
+              <label className={styles.field}>
+                <span>Tipo de campo</span>
+                <CustomSelect
+                  value={activeField.blockType}
+                  onChange={(event) => changeActiveFieldType(event.target.value as SiteBlockType)}
+                  onBlur={onSave}
+                >
+                  {embeddedFormFieldTypes.map(type => <option key={type} value={type}>{blockLabels[type]}</option>)}
+                </CustomSelect>
+              </label>
+              <label className={styles.field}>
+                <span>Página</span>
+                <CustomSelect
+                  value={activeFieldPageId}
+                  onChange={(event) => patchActiveFieldSettings({ pageId: event.target.value })}
+                  onBlur={onSave}
+                >
+                  {pages.map(page => <option key={page.id} value={page.id}>{page.title || 'Página'}</option>)}
+                </CustomSelect>
+              </label>
+            </div>
+          )}
 
           {!isChoiceBlock(activeField.blockType) && (
             <label className={styles.field}>
@@ -3806,12 +3818,11 @@ function FormEmbedEditorPanel({
             </div>
           )}
 
-          {activeField.blockType === 'phone' && (
+          {activeField.blockType === 'phone' && !activeFieldSystemPreset && (
             <label className={styles.checkboxLabel}>
               <input
                 type="checkbox"
                 checked={isPhoneCountrySelectorEnabled(activeField)}
-                disabled={Boolean(activeFieldSystemPreset)}
                 onChange={(event) => {
                   patchActiveFieldSettings({ phoneCountrySelectorEnabled: event.target.checked })
                   window.setTimeout(onSave, 0)
@@ -19182,39 +19193,29 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         <>
           <div className={styles.settingsGroup}>
             <div className={styles.panelSubheader}>Campo</div>
-            <div className={styles.twoColumn}>
+            {systemFieldPreset ? (
               <label className={styles.field}>
                 <span>Texto dentro del campo</span>
                 <input value={block.placeholder} onChange={(event) => onPatchBlock({ placeholder: event.target.value })} onBlur={onSave} />
               </label>
-              <label className={styles.field}>
-                <span>Nombre interno</span>
-                <input
-                  value={getSettingString(settings, 'internalName')}
-                  disabled={Boolean(systemFieldPreset)}
-                  onChange={(event) => onPatchSettings({ internalName: event.target.value })}
-                  onBlur={onSave}
-                />
-              </label>
-            </div>
+            ) : (
+              <div className={styles.twoColumn}>
+                <label className={styles.field}>
+                  <span>Texto dentro del campo</span>
+                  <input value={block.placeholder} onChange={(event) => onPatchBlock({ placeholder: event.target.value })} onBlur={onSave} />
+                </label>
+                <label className={styles.field}>
+                  <span>Nombre interno</span>
+                  <input
+                    value={getSettingString(settings, 'internalName')}
+                    onChange={(event) => onPatchSettings({ internalName: event.target.value })}
+                    onBlur={onSave}
+                  />
+                </label>
+              </div>
+            )}
 
-            <div className={styles.twoColumn}>
-              <label className={styles.field}>
-                <span>Validacion</span>
-                <CustomSelect
-                  value={getSettingString(settings, 'validation')}
-                  disabled={Boolean(systemFieldPreset?.validation)}
-                  onChange={(event) => onPatchSettings({ validation: event.target.value })}
-                  onBlur={onSave}
-                >
-                  <option value="">Ninguna</option>
-                  <option value="email">Correo</option>
-                  <option value="phone">Teléfono</option>
-                  <option value="number">Número</option>
-                  <option value="currency">Moneda</option>
-                  <option value="date">Fecha</option>
-                </CustomSelect>
-              </label>
+            {systemFieldPreset ? (
               <label className={styles.checkboxLabel}>
                 <input
                   type="checkbox"
@@ -19226,14 +19227,42 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 />
                 <span>Campo requerido</span>
               </label>
-            </div>
+            ) : (
+              <div className={styles.twoColumn}>
+                <label className={styles.field}>
+                  <span>Validación</span>
+                  <CustomSelect
+                    value={getSettingString(settings, 'validation')}
+                    onChange={(event) => onPatchSettings({ validation: event.target.value })}
+                    onBlur={onSave}
+                  >
+                    <option value="">Ninguna</option>
+                    <option value="email">Correo</option>
+                    <option value="phone">Teléfono</option>
+                    <option value="number">Número</option>
+                    <option value="currency">Moneda</option>
+                    <option value="date">Fecha</option>
+                  </CustomSelect>
+                </label>
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={block.required}
+                    onChange={(event) => {
+                      onPatchBlock({ required: event.target.checked })
+                      window.setTimeout(onSave, 0)
+                    }}
+                  />
+                  <span>Campo requerido</span>
+                </label>
+              </div>
+            )}
 
-            {block.blockType === 'phone' && (
+            {block.blockType === 'phone' && !systemFieldPreset && (
               <label className={styles.checkboxLabel}>
                 <input
                   type="checkbox"
                   checked={isPhoneCountrySelectorEnabled(block)}
-                  disabled={Boolean(systemFieldPreset)}
                   onChange={(event) => {
                     onPatchSettings({ phoneCountrySelectorEnabled: event.target.checked })
                     window.setTimeout(onSave, 0)
@@ -19912,17 +19941,13 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
     return (
       <div className={styles.settingsGroup}>
         <label className={styles.field}>
-          <span>Formulario existente</span>
+          <span>Origen del formulario</span>
           <CustomSelect value={getSettingString(settings, 'formSiteId')} onChange={(event) => onPatchSettings({ formSiteId: event.target.value, embeddedBlocks: undefined, embeddedPages: undefined })} onBlur={onSave}>
-            <option value="">Componente editable dentro de este sitio</option>
+            <option value="">Crear nuevo formulario</option>
             {forms.filter(form => form.id !== site.id).map(form => (
-              <option key={form.id} value={form.id}>{form.name}</option>
+              <option key={form.id} value={form.id}>Usar formulario guardado: {form.name}</option>
             ))}
           </CustomSelect>
-        </label>
-        <label className={styles.field}>
-          <span>Descripción del formulario</span>
-          <textarea rows={2} value={getSettingString(settings, 'description')} onChange={(event) => onPatchSettings({ description: event.target.value })} onBlur={onSave} />
         </label>
         <label className={styles.field}>
           <span>Al terminar el formulario</span>
@@ -19941,10 +19966,10 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
           }}
         >
           <Plus size={15} />
-          Crear formulario basico
+          Crear formulario básico
         </button>
         {embeddedBlocks.length > 0 && (
-          <p className={styles.muted}>{embeddedBlocks.length} campos guardados en este componente.</p>
+          <p className={styles.muted}>{embeddedBlocks.length} elementos guardados en este componente.</p>
         )}
       </div>
     )
