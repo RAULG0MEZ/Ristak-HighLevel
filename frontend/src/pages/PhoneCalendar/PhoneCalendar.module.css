@@ -535,7 +535,8 @@
 .miniMonthGrid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 2px 1px;
+  row-gap: 3px;
+  column-gap: 1px;
   min-height: 46px;
   color: #050505;
 }
@@ -544,7 +545,7 @@
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 8px;
+  min-height: 9px;
   color: #050505;
   font-size: 7.2px;
   font-weight: 700;
