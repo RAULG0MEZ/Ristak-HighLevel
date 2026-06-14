@@ -108,7 +108,8 @@ interface ConfigState {
   nodeId: string
   /** Si se está configurando un disparador dentro de la tarjeta inicial */
   triggerId?: string
-  anchor: { x: number; y: number }
+  /** Punto del lienzo donde se abrió el panel; se proyecta con el viewport actual. */
+  anchorWorld: { x: number; y: number }
   /** Ya se registró un punto de historial en esta sesión de edición */
   committed: boolean
 }
@@ -225,6 +226,7 @@ export const AutomationEditor: React.FC = () => {
   const [statusBusy, setStatusBusy] = useState(false)
 
   const viewportRef = useRef<AutomationViewport>({ x: 0, y: 0, zoom: 1 })
+  const [configViewport, setConfigViewport] = useState<AutomationViewport>(viewportRef.current)
   const viewportDirtyRef = useRef(false)
   const savedRevisionRef = useRef(0)
   const savedSettingsRevisionRef = useRef(0)
@@ -263,6 +265,14 @@ export const AutomationEditor: React.FC = () => {
   }, [automation])
 
   const { nodes, edges } = state.present
+
+  const editorPointToWorld = useCallback(
+    (point: { x: number; y: number }, viewport: AutomationViewport = viewportRef.current) => ({
+      x: (point.x - viewport.x) / viewport.zoom,
+      y: (point.y - viewport.y) / viewport.zoom
+    }),
+    []
+  )
 
   // Contactos activos por nodo (badges del canvas): se refresca cada 15s
   useEffect(() => {
@@ -629,15 +639,17 @@ export const AutomationEditor: React.FC = () => {
       markOpenConfigErrors()
     }
     const viewport = viewportRef.current
+    const screenAnchor = anchor || {
+      x: (node.position.x + NODE_WIDTH) * viewport.zoom + viewport.x + 36,
+      y: node.position.y * viewport.zoom + viewport.y
+    }
+    setConfigViewport(viewport)
     setConfig({
       nodeId: node.id,
-      anchor: anchor || {
-        x: (node.position.x + NODE_WIDTH) * viewport.zoom + viewport.x + 36,
-        y: node.position.y * viewport.zoom + viewport.y
-      },
+      anchorWorld: editorPointToWorld(screenAnchor, viewport),
       committed: false
     })
-  }, [markOpenConfigErrors])
+  }, [editorPointToWorld, markOpenConfigErrors])
 
   const handlePickStep = useCallback(
     (definition: NodeDefinition) => {
@@ -659,13 +671,15 @@ export const AutomationEditor: React.FC = () => {
         setSelectedNodeId(startNode.id)
         if (definition.fields.length > 0) {
           const viewport = viewportRef.current
+          const screenAnchor = {
+            x: (startNode.position.x + 320) * viewport.zoom + viewport.x + 36,
+            y: startNode.position.y * viewport.zoom + viewport.y
+          }
+          setConfigViewport(viewport)
           setConfig({
             nodeId: startNode.id,
             triggerId: entry.id,
-            anchor: {
-              x: (startNode.position.x + 320) * viewport.zoom + viewport.x + 36,
-              y: startNode.position.y * viewport.zoom + viewport.y
-            },
+            anchorWorld: editorPointToWorld(screenAnchor, viewport),
             committed: true
           })
         }
@@ -919,7 +933,9 @@ export const AutomationEditor: React.FC = () => {
         }
         setPicker(null)
         setSelectedNodeId(node.id)
-        setConfig({ nodeId: node.id, triggerId, anchor, committed: false })
+        const viewport = viewportRef.current
+        setConfigViewport(viewport)
+        setConfig({ nodeId: node.id, triggerId, anchorWorld: editorPointToWorld(anchor, viewport), committed: false })
       },
       onRemoveTrigger: (node: AutomationNode, triggerId: string) => {
         const current = stateRef.current.present
@@ -939,6 +955,7 @@ export const AutomationEditor: React.FC = () => {
       onViewportChange: (viewport: AutomationViewport) => {
         viewportRef.current = viewport
         viewportDirtyRef.current = true
+        if (configRef.current) setConfigViewport(viewport)
       },
       // ----------------- selección múltiple -----------------
       onClearSelection: () => {
@@ -1055,6 +1072,7 @@ export const AutomationEditor: React.FC = () => {
     }),
     [
       commitFlow,
+      editorPointToWorld,
       findFreeOutput,
       markOpenConfigErrors,
       nodeErrors,
@@ -1375,6 +1393,12 @@ export const AutomationEditor: React.FC = () => {
         ? getNodeDefinition(configNode.type)
         : undefined
     : undefined
+  const configAnchor = config
+    ? {
+        x: config.anchorWorld.x * configViewport.zoom + configViewport.x,
+        y: config.anchorWorld.y * configViewport.zoom + configViewport.y
+      }
+    : null
 
   const handleConfigChange = (nextConfig: Record<string, unknown>) => {
     if (!config || !configNode) return
@@ -1625,11 +1649,11 @@ export const AutomationEditor: React.FC = () => {
         )}
 
         {/* Panel de configuración flotante junto al evento */}
-        {config && configNode && configDefinition && (
+        {config && configNode && configDefinition && configAnchor && (
           <NodeConfigBubble
             definition={configDefinition}
             config={(configTrigger ? configTrigger.config : configNode.config) || {}}
-            anchor={config.anchor}
+            anchor={configAnchor}
             bounds={canvasBounds}
             onChange={handleConfigChange}
             onRefreshWebhookSample={refreshWebhookSample}

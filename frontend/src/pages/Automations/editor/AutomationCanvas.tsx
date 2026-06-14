@@ -178,7 +178,11 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
   viewportRef.current = viewport
 
   const [panning, setPanning] = useState(false)
-  const panStateRef = useRef<{ pointer: { x: number; y: number }; pan: { x: number; y: number } } | null>(null)
+  const panStateRef = useRef<{
+    pointer: { x: number; y: number }
+    pan: { x: number; y: number }
+    moved: boolean
+  } | null>(null)
 
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef(drag)
@@ -205,6 +209,7 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
 
   const setAndReportViewport = useCallback(
     (next: AutomationViewport) => {
+      viewportRef.current = next
       setViewport(next)
       actions.onViewportChange(next)
     },
@@ -281,9 +286,15 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
       const panState = panStateRef.current
       if (panState) {
         // Redondeado a píxeles enteros: evita texto borroso durante el pan
-        setViewport({
-          x: Math.round(panState.pan.x + (event.clientX - panState.pointer.x)),
-          y: Math.round(panState.pan.y + (event.clientY - panState.pointer.y)),
+        const dx = event.clientX - panState.pointer.x
+        const dy = event.clientY - panState.pointer.y
+        const moved = panState.moved || Math.hypot(dx, dy) > 3
+        if (moved !== panState.moved) {
+          panStateRef.current = { ...panState, moved }
+        }
+        setAndReportViewport({
+          x: Math.round(panState.pan.x + dx),
+          y: Math.round(panState.pan.y + dy),
           zoom: viewportRef.current.zoom
         })
         return
@@ -341,9 +352,14 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
 
     const handleUp = (event: PointerEvent) => {
       if (panStateRef.current) {
+        const panState = panStateRef.current
         panStateRef.current = null
         setPanning(false)
         actions.onViewportChange(viewportRef.current)
+        if (!panState.moved) {
+          actions.onSelectNode(null)
+          actions.onSelectEdge(null)
+        }
         return
       }
 
@@ -440,7 +456,7 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
     }
-  }, [actions, clientToEditor, clientToWorld])
+  }, [actions, clientToEditor, clientToWorld, setAndReportViewport])
 
   // ------------------------------------------------------------------
   // Handlers de la superficie
@@ -456,11 +472,10 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
       return
     }
 
-    actions.onSelectNode(null)
-    actions.onSelectEdge(null)
     panStateRef.current = {
       pointer: { x: event.clientX, y: event.clientY },
-      pan: { x: viewportRef.current.x, y: viewportRef.current.y }
+      pan: { x: viewportRef.current.x, y: viewportRef.current.y },
+      moved: false
     }
     setPanning(true)
   }
