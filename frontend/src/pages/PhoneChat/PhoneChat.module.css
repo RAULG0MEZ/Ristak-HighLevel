@@ -1480,26 +1480,27 @@
 }
 
 .aiAgentHubRobot .agentRobot {
-  width: 48px;
-  height: 44px;
+  width: 56px;
+  height: 51px;
   transform: none;
 }
 
 .aiAgentHubRobot .agentRobotHead {
-  width: 44px;
-  height: 33px;
+  width: 50px;
+  height: 38px;
   border-width: 3px;
-  border-radius: 14px;
+  border-radius: 16px;
   background:
-    radial-gradient(circle at 31% 32%, rgba(224, 242, 254, 0.18), transparent 18%),
-    radial-gradient(circle at 69% 32%, rgba(224, 242, 254, 0.18), transparent 18%),
+    radial-gradient(circle at 31% 33%, rgba(224, 242, 254, 0.2), transparent 17%),
+    radial-gradient(circle at 69% 33%, rgba(224, 242, 254, 0.2), transparent 17%),
+    radial-gradient(circle at 50% 86%, rgba(34, 211, 238, 0.18), transparent 34%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 48%),
     rgba(8, 35, 89, 0.9);
 }
 
 .aiAgentHubRobot .agentRobotHead::before,
 .aiAgentHubRobot .agentRobotHead::after {
-  top: 12px;
+  top: 13px;
   width: 6px;
   height: 11px;
 }
@@ -1514,24 +1515,39 @@
 
 .aiAgentHubRobot .agentRobotAntenna {
   width: 4px;
-  height: 11px;
-  transform: translate(-50%, -11px);
+  height: 16px;
+  top: 7px;
+  transform: translate(-50%, -14px);
 }
 
 .aiAgentHubRobot .agentRobotAntenna::after {
-  top: -8px;
+  top: -9px;
   width: 12px;
   height: 12px;
 }
 
+.aiAgentHubRobot .agentRobotBrows {
+  top: 9px;
+  width: 34px;
+  gap: 14px;
+  opacity: 0.78;
+}
+
+.aiAgentHubRobot .agentRobotBrow {
+  width: 10px;
+  height: 3px;
+}
+
 .aiAgentHubRobot .agentRobotEyes {
-  top: 7px;
-  left: 8px;
-  gap: 10px;
+  top: 13px;
+  left: 50%;
+  width: 32px;
+  gap: 11px;
+  transform: translateX(-50%);
 }
 
 .aiAgentHubRobot .agentRobotEye {
-  width: 9px;
+  width: 8px;
   height: 9px;
   background: #e8f7ff;
   box-shadow:
@@ -1539,9 +1555,22 @@
     inset 0 -2px 0 rgba(125, 211, 252, 0.42);
 }
 
+.aiAgentHubRobot .agentRobotCheeks {
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  opacity: 0.64;
+}
+
+.aiAgentHubRobot .agentRobotCheek {
+  width: 5px;
+  height: 5px;
+  box-shadow: 0 0 10px rgba(94, 234, 212, 0.66);
+}
+
 .aiAgentHubRobot .agentRobotMouth {
   right: 14px;
-  bottom: 6px;
+  bottom: 8px;
   left: 14px;
   height: 3px;
   background: rgba(186, 230, 253, 0.78);
@@ -1571,16 +1600,24 @@
   animation: aiAgentHubRobotAntenna 6.8s ease-in-out infinite;
 }
 
+.aiAgentHubRobotOn .agentRobotBrows {
+  animation: aiAgentHubRobotBrows 8.6s ease-in-out infinite;
+}
+
 .aiAgentHubRobotOn .agentRobotEyes {
-  animation: aiAgentHubRobotEyes 11.6s ease-in-out infinite;
+  animation: aiAgentHubRobotEyes 9.4s ease-in-out infinite;
 }
 
 .aiAgentHubRobotOn .agentRobotEye {
-  animation: aiAgentHubRobotBlink 6.4s ease-in-out infinite;
+  animation: aiAgentHubRobotBlink 6.8s ease-in-out infinite;
+}
+
+.aiAgentHubRobotOn .agentRobotCheeks {
+  animation: aiAgentHubRobotCheeks 7.8s ease-in-out infinite;
 }
 
 .aiAgentHubRobotOn .agentRobotMouth {
-  animation: aiAgentHubRobotTalk 7.8s ease-in-out infinite;
+  animation: aiAgentHubRobotTalk 6.8s ease-in-out infinite;
 }
 
 .aiAgentHubRobotPing,
@@ -7437,9 +7474,15 @@
 
 .agentBotButtonIdle .agentRobotAntenna::after,
 .agentBotButtonIdle .agentRobotEye,
+.agentBotButtonIdle .agentRobotBrow,
+.agentBotButtonIdle .agentRobotCheek,
 .agentBotButtonIdle .agentRobotMouth {
   background: #6b7280;
   box-shadow: none;
+}
+
+.agentBotButtonIdle .agentRobotEye::after {
+  opacity: 0;
 }
 
 .agentRobot {
@@ -7459,6 +7502,7 @@
 
 .agentRobotHead {
   position: relative;
+  z-index: 2;
   display: block;
   width: 25px;
   height: 19px;
@@ -7496,18 +7540,23 @@
 
 .agentRobotAntenna {
   position: absolute;
-  top: 0;
+  top: 3px;
   left: 50%;
+  z-index: 1;
   width: 2px;
-  height: 6px;
+  height: 8px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.96);
-  transform: translate(-50%, -5px);
+  transform: translate(-50%, -7px);
   transform-origin: 50% 100%;
 }
 
 .agentBotButtonActive .agentRobotAntenna {
   animation: agentRobotAntenna 3.8s ease-in-out infinite;
+}
+
+.agentBotButtonActive .agentRobotBrows {
+  animation: agentRobotBrows 4.8s ease-in-out infinite;
 }
 
 .agentRobotAntenna::after {
@@ -7526,10 +7575,12 @@
 .agentRobotEyes {
   position: absolute;
   top: 6px;
-  left: 6px;
+  left: 50%;
   display: inline-flex;
+  justify-content: center;
+  width: 12px;
   gap: 4px;
-  transform: translateX(0);
+  transform: translateX(-50%);
 }
 
 .agentBotButtonActive .agentRobotEyes {
@@ -7543,11 +7594,78 @@
   border-radius: 999px;
   background: #e0f2fe;
   box-shadow: 0 0 5px rgba(224, 242, 254, 0.92);
+  position: relative;
+  overflow: hidden;
   transform-origin: 50% 50%;
+}
+
+.agentRobotEye::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  opacity: 0.82;
+}
+
+.agentRobotBrows {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  display: inline-flex;
+  justify-content: center;
+  width: 14px;
+  gap: 5px;
+  opacity: 0.74;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.agentRobotBrow {
+  width: 5px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: rgba(224, 242, 254, 0.9);
+  box-shadow: 0 0 5px rgba(125, 211, 252, 0.55);
+  transform-origin: 50% 50%;
+}
+
+.agentRobotBrow:first-child {
+  transform: rotate(-7deg);
+}
+
+.agentRobotBrow:last-child {
+  transform: rotate(7deg);
+}
+
+.agentRobotCheeks {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  left: 5px;
+  display: flex;
+  justify-content: space-between;
+  opacity: 0.54;
+  pointer-events: none;
+}
+
+.agentRobotCheek {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(94, 234, 212, 0.72);
+  box-shadow: 0 0 5px rgba(94, 234, 212, 0.62);
 }
 
 .agentBotButtonActive .agentRobotEye {
   animation: agentRobotBlink 5.2s ease-in-out infinite;
+}
+
+.agentBotButtonActive .agentRobotCheeks {
+  animation: agentRobotCheeks 3.8s ease-in-out infinite;
 }
 
 .agentRobotMouth {
@@ -7730,16 +7848,22 @@
 }
 
 @keyframes agentRobotAntenna {
-  0%, 100% { transform: translate(-50%, -5px) rotate(0deg); }
-  42% { transform: translate(-50%, -5px) rotate(-7deg); }
-  58% { transform: translate(-50%, -5px) rotate(6deg); }
+  0%, 100% { transform: translate(-50%, -7px) rotate(0deg); }
+  42% { transform: translate(-50%, -7px) rotate(-6deg); }
+  58% { transform: translate(-50%, -7px) rotate(5deg); }
+}
+
+@keyframes agentRobotBrows {
+  0%, 18%, 100% { transform: translateX(-50%) translateY(0); opacity: 0.72; }
+  32%, 45% { transform: translateX(-50%) translateY(-0.7px); opacity: 0.92; }
+  64%, 74% { transform: translateX(-50%) translateY(0.4px); opacity: 0.76; }
 }
 
 @keyframes agentRobotLookAround {
-  0%, 18%, 100% { transform: translateX(0); }
-  28%, 40% { transform: translateX(-1px); }
-  52%, 66% { transform: translateX(1.2px); }
-  78%, 88% { transform: translateX(-0.5px); }
+  0%, 18%, 100% { transform: translateX(-50%) translateX(0); }
+  28%, 40% { transform: translateX(-50%) translateX(-0.7px); }
+  52%, 66% { transform: translateX(-50%) translateX(0.8px); }
+  78%, 88% { transform: translateX(-50%) translateX(-0.35px); }
 }
 
 @keyframes agentRobotBlink {
@@ -7753,15 +7877,22 @@
   62% { transform: scaleX(0.88); opacity: 0.9; }
 }
 
+@keyframes agentRobotCheeks {
+  0%, 100% { opacity: 0.42; transform: scale(0.92); }
+  42% { opacity: 0.76; transform: scale(1.08); }
+  68% { opacity: 0.5; transform: scale(1); }
+}
+
 @keyframes aiAgentHubRobotFloat {
-  0%, 100% { transform: translateY(0) scale(1); }
-  10% { transform: translateY(-2px) scale(1.012); }
-  19% { transform: translateY(0) scale(1); }
-  34% { transform: translateY(-4px) scale(1.022); }
-  48% { transform: translateY(-1px) scale(1.006); }
-  64% { transform: translateY(-3px) scale(1.016); }
-  78% { transform: translateY(1px) scale(0.996); }
-  90% { transform: translateY(-2px) scale(1.01); }
+  0%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
+  8% { transform: translateY(-1px) scale(1.01) rotate(-0.6deg); }
+  17% { transform: translateY(0.5px) scale(0.998) rotate(0.4deg); }
+  29% { transform: translateY(-4px) scale(1.024) rotate(0deg); }
+  43% { transform: translateY(-1px) scale(1.008) rotate(0.7deg); }
+  57% { transform: translateY(-3px) scale(1.018) rotate(-0.4deg); }
+  71% { transform: translateY(0.6px) scale(0.997) rotate(0deg); }
+  84% { transform: translateY(-2px) scale(1.012) rotate(0.5deg); }
+  93% { transform: translateY(0) scale(1.002) rotate(0deg); }
 }
 
 @keyframes aiAgentHubRobotGradient {
@@ -7773,53 +7904,70 @@
 
 @keyframes aiAgentHubRobotBody {
   0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
-  12% { transform: translateY(-1px) rotate(-1.5deg) scale(1.02); }
-  24% { transform: translateY(0) rotate(1deg) scale(1); }
-  38% { transform: translateY(-2px) rotate(0deg) scale(1.035); }
-  50% { transform: translateY(0) rotate(0deg) scale(1); }
-  66% { transform: translateY(-1px) rotate(2deg) scale(1.02); }
-  72% { transform: translateY(-1px) rotate(-2deg) scale(1.02); }
-  82% { transform: translateY(0) rotate(0deg) scale(1); }
+  10% { transform: translateY(-1px) rotate(-1.2deg) scale(1.015); }
+  18% { transform: translateY(0) rotate(0.8deg) scale(1); }
+  32% { transform: translateY(-2px) rotate(0deg) scale(1.035); }
+  44% { transform: translateY(-0.5px) rotate(1.4deg) scale(1.01); }
+  58% { transform: translateY(-1.5px) rotate(-1deg) scale(1.026); }
+  69% { transform: translateY(0) rotate(0deg) scale(1); }
+  79% { transform: translateY(-2.4px) rotate(-3.4deg) scale(1.04); }
+  84% { transform: translateY(-1px) rotate(3deg) scale(1.026); }
+  91% { transform: translateY(0) rotate(0deg) scale(1); }
 }
 
 @keyframes aiAgentHubRobotFace {
   0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  14%, 24% { transform: translate(-1px, 0) rotate(-2deg); }
-  38%, 50% { transform: translate(1px, -0.5px) rotate(2deg); }
-  62%, 70% { transform: translate(0, 0.5px) rotate(0deg); }
-  78%, 86% { transform: translate(-0.5px, 0) rotate(-1deg); }
+  12%, 22% { transform: translate(-0.8px, 0) rotate(-1.4deg); }
+  35%, 48% { transform: translate(0.9px, -0.4px) rotate(1.6deg); }
+  60%, 68% { transform: translate(0, 0.45px) rotate(0deg); }
+  77%, 87% { transform: translate(-0.45px, 0) rotate(-0.9deg); }
 }
 
 @keyframes aiAgentHubRobotAntenna {
-  0%, 100% { transform: translate(-50%, -11px) rotate(0deg); }
-  16% { transform: translate(-50%, -11px) rotate(-6deg); }
-  24% { transform: translate(-50%, -11px) rotate(5deg); }
-  44% { transform: translate(-50%, -11px) rotate(0deg); }
-  72% { transform: translate(-50%, -11px) rotate(8deg); }
-  80% { transform: translate(-50%, -11px) rotate(-5deg); }
+  0%, 100% { transform: translate(-50%, -14px) rotate(0deg); }
+  14% { transform: translate(-50%, -14px) rotate(-5deg); }
+  22% { transform: translate(-50%, -14px) rotate(4deg); }
+  43% { transform: translate(-50%, -14px) rotate(0deg); }
+  70% { transform: translate(-50%, -14px) rotate(7deg); }
+  79% { transform: translate(-50%, -14px) rotate(-4deg); }
+}
+
+@keyframes aiAgentHubRobotBrows {
+  0%, 100% { transform: translateX(-50%) translateY(0); opacity: 0.76; }
+  12%, 24% { transform: translateX(-50%) translateY(-1px); opacity: 0.96; }
+  38%, 50% { transform: translateX(-50%) translateY(0.7px); opacity: 0.7; }
+  66%, 75% { transform: translateX(-50%) translateY(-0.4px); opacity: 0.88; }
+  84%, 92% { transform: translateX(-50%) translateY(-1.2px); opacity: 1; }
 }
 
 @keyframes aiAgentHubRobotEyes {
-  0%, 100% { transform: translateX(0); }
-  12%, 24% { transform: translateX(-3px); }
-  38%, 52% { transform: translateX(3px); }
-  64%, 74% { transform: translateX(0); }
-  82%, 90% { transform: translateX(-1.5px); }
+  0%, 100% { transform: translateX(-50%) translateX(0); }
+  12%, 24% { transform: translateX(-50%) translateX(-1.2px); }
+  38%, 52% { transform: translateX(-50%) translateX(1.2px); }
+  64%, 74% { transform: translateX(-50%) translateX(0); }
+  82%, 90% { transform: translateX(-50%) translateX(-0.6px); }
 }
 
 @keyframes aiAgentHubRobotBlink {
-  0%, 8%, 36%, 39%, 57%, 61%, 83%, 87%, 100% { transform: scaleY(1); }
-  9%, 37%, 59%, 85% { transform: scaleY(0.12); }
+  0%, 8%, 34%, 38%, 54%, 59%, 81%, 87%, 100% { transform: scaleY(1); }
+  9%, 36%, 56%, 84% { transform: scaleY(0.13); }
 }
 
 @keyframes aiAgentHubRobotTalk {
-  0%, 14%, 100% { transform: scaleX(0.62); opacity: 0.8; }
-  18% { transform: scaleX(1.16); opacity: 1; }
-  22% { transform: scaleX(0.82); opacity: 0.9; }
-  42% { transform: scaleX(1.08); opacity: 1; }
-  49% { transform: scaleX(0.72); opacity: 0.86; }
-  70% { transform: scaleX(1.22); opacity: 1; }
-  78% { transform: scaleX(0.72); opacity: 0.86; }
+  0%, 14%, 100% { transform: scaleX(0.68) translateY(0); opacity: 0.78; }
+  17% { transform: scaleX(1.18) translateY(-0.3px); opacity: 1; }
+  22% { transform: scaleX(0.82) translateY(0); opacity: 0.9; }
+  40% { transform: scaleX(1.04) translateY(-0.2px); opacity: 1; }
+  48% { transform: scaleX(0.76) translateY(0); opacity: 0.84; }
+  68% { transform: scaleX(1.24) translateY(-0.4px); opacity: 1; }
+  76% { transform: scaleX(0.8) translateY(0); opacity: 0.86; }
+}
+
+@keyframes aiAgentHubRobotCheeks {
+  0%, 100% { opacity: 0.46; transform: scale(0.92); }
+  18%, 32% { opacity: 0.82; transform: scale(1.1); }
+  46%, 62% { opacity: 0.56; transform: scale(0.98); }
+  80%, 90% { opacity: 0.9; transform: scale(1.16); }
 }
 
 @keyframes aiAgentHubOrbit {
@@ -7915,8 +8063,10 @@
   .agentBotButtonActive .agentRobot,
   .agentBotButtonActive .agentRobotHead,
   .agentBotButtonActive .agentRobotAntenna,
+  .agentBotButtonActive .agentRobotBrows,
   .agentBotButtonActive .agentRobotEyes,
   .agentBotButtonActive .agentRobotEye,
+  .agentBotButtonActive .agentRobotCheeks,
   .agentBotButtonActive .agentRobotMouth,
   .aiAgentHubRobotOn,
   .aiAgentHubRobotOn::before,
@@ -7924,8 +8074,10 @@
   .aiAgentHubRobotOn .agentRobot,
   .aiAgentHubRobotOn .agentRobotHead,
   .aiAgentHubRobotOn .agentRobotAntenna,
+  .aiAgentHubRobotOn .agentRobotBrows,
   .aiAgentHubRobotOn .agentRobotEyes,
   .aiAgentHubRobotOn .agentRobotEye,
+  .aiAgentHubRobotOn .agentRobotCheeks,
   .aiAgentHubRobotOn .agentRobotMouth,
   .aiAgentHubRobotOn .aiAgentHubRobotPing,
   .aiAgentHubRobotOn .aiAgentHubRobotSparkleOne,

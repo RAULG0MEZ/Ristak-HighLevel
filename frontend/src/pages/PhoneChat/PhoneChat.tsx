@@ -11903,9 +11903,17 @@ export const PhoneChat: React.FC = () => {
       <span className={styles.agentRobot} aria-hidden="true">
         <span className={styles.agentRobotAntenna} />
         <span className={styles.agentRobotHead}>
+          <span className={styles.agentRobotBrows}>
+            <span className={styles.agentRobotBrow} />
+            <span className={styles.agentRobotBrow} />
+          </span>
           <span className={styles.agentRobotEyes}>
             <span className={styles.agentRobotEye} />
             <span className={styles.agentRobotEye} />
+          </span>
+          <span className={styles.agentRobotCheeks}>
+            <span className={styles.agentRobotCheek} />
+            <span className={styles.agentRobotCheek} />
           </span>
           <span className={styles.agentRobotMouth} />
         </span>
