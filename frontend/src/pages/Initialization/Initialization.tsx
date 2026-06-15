@@ -147,7 +147,7 @@ export const Initialization: React.FC = () => {
           Inicialización
         </span>
         <h1 className={styles.heroTitle}>
-          Pon en marcha tu <Logo size="lg" className={styles.heroLogo} />
+          Pon en marcha tu <Logo size="sm" className={styles.heroLogo} />
         </h1>
         <p className={styles.heroSubtitle}>
           Conecta tus integraciones en orden para dejar todo listo. A medida que las completes,
