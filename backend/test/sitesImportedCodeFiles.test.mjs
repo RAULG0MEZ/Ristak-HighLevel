@@ -103,3 +103,27 @@ test('AI HTML draft edit returns edited draft without saving imported code', asy
     if (siteId) await deleteSite(siteId).catch(() => undefined)
   }
 })
+
+test('AI HTML editor instructions stay scoped to active code only', async () => {
+  const { buildSitesAIHtmlInstructions } = await import('../src/services/sitesService.js')
+
+  const instructions = buildSitesAIHtmlInstructions({
+    siteKind: 'landing',
+    editMode: true,
+    agentConfig: {
+      business_context: 'Clinica secreta del negocio',
+      market_context: 'Mercado privado guardado',
+      ideal_customer: 'Cliente ideal guardado',
+      brand_voice: 'Voz de marca del chatbot'
+    }
+  })
+
+  assert.match(instructions, /Alcance privado del editor HTML/)
+  assert.match(instructions, /Solo puedes usar el HTML\/CSS\/JS activo/)
+  assert.match(instructions, /No tienes acceso al contexto del negocio/)
+  assert.doesNotMatch(instructions, /Clinica secreta del negocio/)
+  assert.doesNotMatch(instructions, /Mercado privado guardado/)
+  assert.doesNotMatch(instructions, /Cliente ideal guardado/)
+  assert.doesNotMatch(instructions, /Voz de marca del chatbot/)
+  assert.doesNotMatch(instructions, /Contexto del negocio configurado en Ristak/)
+})

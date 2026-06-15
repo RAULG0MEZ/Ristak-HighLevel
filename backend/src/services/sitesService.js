@@ -4909,10 +4909,20 @@ function getSitesAIImageCatalogText() {
     .join('\n')
 }
 
-function buildSitesAIHtmlInstructions({ siteKind, agentConfig = {}, editMode = false }) {
-  const businessContext = getSitesAIBusinessContext(agentConfig)
+export function buildSitesAIHtmlInstructions({ siteKind, agentConfig = {}, editMode = false, includeBusinessContext = !editMode } = {}) {
+  const businessContext = includeBusinessContext ? getSitesAIBusinessContext(agentConfig) : ''
   const imageCatalog = getSitesAIImageCatalogText()
   const targetSiteType = getSitesAITargetType(siteKind)
+  const contextScopeBlock = includeBusinessContext
+    ? `
+Contexto del negocio configurado en Ristak:
+${businessContext || 'Sin contexto adicional configurado.'}`
+    : `
+Alcance privado del editor HTML:
+- Solo puedes usar el HTML/CSS/JS activo que viene en currentHtml, activePage, importedPages, visualContext y la solicitud escrita por el usuario.
+- No tienes acceso al contexto del negocio, CRM, contactos, conversaciones, campañas, pagos, automatizaciones, configuraciones del chatbot ni memoria del Agente AI.
+- No inventes datos del negocio ni uses información guardada fuera de este archivo. Si el usuario pide algo que requiere ese contexto, pídele que lo pegue en la instrucción.
+- Trata visualContext como una captura interna derivada del mismo HTML activo; úsala solo para ubicar elementos visibles.`
 
   return `
 Eres el creador libre de páginas HTML de Ristak. Genera o modifica una página completa en HTML/CSS para que Ristak la importe como código propio.
@@ -5035,8 +5045,7 @@ Modo creación:
 Catalogo de imágenes permitido:
 ${imageCatalog}
 
-Contexto del negocio configurado en Ristak:
-${businessContext || 'Sin contexto adicional configurado.'}
+${contextScopeBlock}
 `.trim()
 }
 
@@ -5213,27 +5222,18 @@ async function callSitesAIHtmlGenerator({ apiKey, model, siteKind, messages, age
   })
 }
 
-async function callSitesAIHtmlEditor({ apiKey, model, siteKind, messages, agentConfig, site, importedSite, importedPages = [], visualContext = null, activePageId = '', aiRegionRequest = '' }) {
+async function callSitesAIHtmlEditor({ apiKey, model, siteKind, messages, importedSite, importedPages = [], visualContext = null, activePageId = '', aiRegionRequest = '' }) {
   const activePage = findImportedAIActivePageContext(importedPages, activePageId)
   return callSitesAIJsonWithAgentSdk({
     apiKey,
     model,
-    instructions: buildSitesAIHtmlInstructions({ siteKind, agentConfig, editMode: true }),
+    instructions: buildSitesAIHtmlInstructions({ siteKind, editMode: true, includeBusinessContext: false }),
     input: {
       siteKind,
       targetSiteType: getSitesAITargetType(siteKind),
-      site: {
-        id: site?.id,
-        name: site?.name,
-        title: site?.title,
-        description: site?.description,
-        siteType: site?.siteType
-      },
       importedSite: {
         importType: importedSite?.importType,
-        originalFilename: importedSite?.originalFilename,
-        detectedForms: importedSite?.detectedForms || [],
-        formMappings: importedSite?.formMappings || []
+        originalFilename: importedSite?.originalFilename
       },
       activePageId: cleanString(activePageId),
       activePage: activePage
@@ -5252,7 +5252,7 @@ async function callSitesAIHtmlEditor({ apiKey, model, siteKind, messages, agentC
     },
     maxOutputTokens: 30000,
     fallbackError: 'OpenAI no pudo editar el HTML',
-    agentName: 'Asistente AI del editor HTML'
+    agentName: 'Asistente de código HTML'
   })
 }
 
@@ -6110,7 +6110,7 @@ function applyImportedAIRegionAgentOperationsToHtml(html = '', { promptText = ''
     attempted: operations.length > 0,
     applied,
     operation: operations.length > 1 ? 'site_agent_operations' : (operations[0]?.split(':')[0] || ''),
-    reason: applied ? 'El agente interno aplicó operaciones deterministas y verificó diferencias en el HTML.' : 'No había una operación determinista suficiente para esta solicitud.',
+    reason: applied ? 'La regla interna del editor aplicó operaciones deterministas y verificó diferencias en el HTML.' : 'No había una operación determinista suficiente para esta solicitud.',
     operations
   }
 }
@@ -6176,7 +6176,7 @@ function buildImportedAIRegionAgentPageResult({ currentImport = {}, importedPage
     attempted: true,
     missingTarget: false,
     operation: agentResult.operation || 'site_agent_operations',
-    reason: agentResult.reason || 'Operacion aplicada por agente interno.',
+    reason: agentResult.reason || 'Operacion aplicada por una regla interna del editor.',
     operations: agentResult.operations || []
   }
 }
@@ -8295,7 +8295,7 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   debug.agentReason = agentResult.reason || ''
   debug.agentOperations = agentResult.operations || []
   if (agentResult.attempted) {
-    addSitesAIEditDebugStep(debug, `Agente interno ${agentResult.operation || 'operación'}: ${agentResult.reason || 'sin detalle'}`)
+    addSitesAIEditDebugStep(debug, `Regla interna ${agentResult.operation || 'operación'}: ${agentResult.reason || 'sin detalle'}`)
     addSitesAIEditProgressStep(debug, {
       id: 'site_agent',
       label: agentResult.page ? 'Regla interna aplicada' : 'Regla interna revisada',
@@ -8310,7 +8310,7 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   if (agentResult.page) {
     if (draftOnly) {
       debug.finalStatus = 'draft_updated_with_site_agent'
-      addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador aplicado por el agente interno.')
+      addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador aplicado por una regla interna.')
       addSitesAIEditProgressStep(debug, {
         id: 'draft',
         label: 'Borrador listo',
@@ -8323,7 +8323,7 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
         currentImport: currentImportForAI,
         importedPages,
         activePageId,
-        reply: agentResult.reason || 'Ristak aplicó el cambio con el agente interno del editor.',
+        reply: agentResult.reason || 'Ristak aplicó el cambio con una regla interna del editor.',
         debug
       })
     }
@@ -8335,7 +8335,7 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
       description: agentResult.page.description || currentSite.description
     })
     debug.finalStatus = 'updated_with_site_agent'
-    addSitesAIEditDebugStep(debug, 'Se guardo el HTML aplicado por el agente interno.')
+    addSitesAIEditDebugStep(debug, 'Se guardo el HTML aplicado por una regla interna.')
     addSitesAIEditProgressStep(debug, {
       id: 'save',
       label: 'HTML guardado',
@@ -8346,7 +8346,7 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
 
     return {
       status: 'updated',
-      reply: agentResult.reason || 'Ristak aplicó el cambio con el agente interno del editor.',
+      reply: agentResult.reason || 'Ristak aplicó el cambio con una regla interna del editor.',
       site: result.site,
       import: result.import,
       debug: getSitesAIEditDebugPayload(debug)
@@ -8381,8 +8381,6 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
       model,
       siteKind,
       messages,
-      agentConfig,
-      site: currentSite,
       importedSite: currentImportForAI,
       importedPages,
       visualContext,

@@ -13471,7 +13471,7 @@ const ImportedHtmlEditorPanel: React.FC<{
         ? `Elemento seleccionado en vista previa: ${codeSelectionNotice}.`
         : 'No hay elemento seleccionado; aplica el cambio a la página activa solo si la instrucción lo pide.'
     const assistantInstruction = [
-      'Eres el Asistente AI quirúrgico del editor HTML de Ristak.',
+      'Eres el asistente de código HTML de Ristak.',
       'Edita el HTML actual que Ristak te manda como currentHtml. No reconstruyas toda la página salvo que el usuario lo pida de forma explícita.',
       'Si el usuario menciona "este", "ese botón", "este campo" o una sección seleccionada, usa primero el contexto del elemento seleccionado.',
       'Conserva scripts de Ristak, atributos data-rstk/data-ristak, formularios, tracking y acciones existentes salvo que el usuario pida cambiarlos.',
@@ -15124,10 +15124,10 @@ const ImportedHtmlEditorPanel: React.FC<{
                   setCodeAssistantError('')
                 }}
                 disabled={!aiAgentAvailable}
-                title={aiAgentAvailable ? 'Abrir asistente AI del código' : 'Configura OpenAI en Agente AI para usar el asistente'}
+                title={aiAgentAvailable ? 'Abrir asistente de código' : 'Configura una clave de OpenAI para usar el asistente de código'}
               >
                 <Sparkles size={14} />
-                Asistente AI
+                Asistente de código
               </Button>
               <strong className={activeCodeDirty ? styles.importedCodeDirtyStatus : styles.importedCodeSavedStatus}>
                 {activeCodeDirty ? 'Cambios sin guardar' : 'Guardado'}
@@ -15255,8 +15255,8 @@ const ImportedHtmlEditorPanel: React.FC<{
                     <div className={styles.importedCodeAssistantTitle}>
                       <Sparkles size={15} />
                       <div>
-                        <span>Asistente AI</span>
-                        <strong>Edita el HTML activo</strong>
+                        <span>Asistente de código</span>
+                        <strong>Solo ve el HTML activo</strong>
                       </div>
                     </div>
                     <label className={styles.importedCodeAssistantModel}>
