@@ -9302,19 +9302,6 @@ type ImportedCodeAssistantWorkStep = {
   status: 'pending' | 'active' | 'done' | 'error'
 }
 
-function getImportedCodeAssistantProgressPercent(steps: ImportedCodeAssistantWorkStep[]) {
-  if (!steps.length) return 0
-  const errorIndex = steps.findIndex(step => step.status === 'error')
-  const activeIndex = steps.findIndex(step => step.status === 'active')
-  const doneCount = steps.filter(step => step.status === 'done').length
-  const weightedCount = errorIndex >= 0
-    ? Math.max(1, errorIndex + 0.62)
-    : activeIndex >= 0
-      ? doneCount + 0.48
-      : doneCount
-  return Math.max(8, Math.min(100, Math.round((weightedCount / steps.length) * 100)))
-}
-
 function getImportedCodeAssistantStepsFromDebug(debug?: SitesAIEditDebug | null): ImportedCodeAssistantWorkStep[] {
   const structuredSteps = Array.isArray(debug?.progressSteps)
     ? debug.progressSteps
@@ -9338,6 +9325,19 @@ function getImportedCodeAssistantStepsFromDebug(debug?: SitesAIEditDebug | null)
     detail: step,
     status: 'done'
   }))
+}
+
+function getImportedCodeAssistantActivityLabel(steps: ImportedCodeAssistantWorkStep[], saving = false) {
+  if (!steps.length) return ''
+  const errorStep = steps.find(step => step.status === 'error')
+  if (errorStep) return 'Revisar instrucción'
+  if (!saving && steps.every(step => step.status === 'done')) return 'Cambio preparado'
+  const activeStep = steps.find(step => step.status === 'active')
+  const activeId = String(activeStep?.id || '').toLowerCase()
+  if (/context|selection|model|openai_request/.test(activeId)) return 'Analizando código'
+  if (/patch|openai|response|normalize/.test(activeId)) return 'Editando HTML'
+  if (/draft|save/.test(activeId)) return 'Preparando borrador'
+  return saving ? 'Editando HTML' : 'Cambio preparado'
 }
 
 type ImportedButtonEditorState = {
@@ -12402,8 +12402,13 @@ function getImportedCodeDiagnostics(value: string, language = 'html') {
   const diagnostics: string[] = []
   const normalizedLanguage = language.toLowerCase()
   if (!value.trim()) return diagnostics
+  const diagnosticSource = value
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+    .replace(/<textarea\b[\s\S]*?<\/textarea>/gi, '')
 
-  if ((value.match(/</g)?.length || 0) > (value.match(/>/g)?.length || 0)) {
+  if ((diagnosticSource.match(/</g)?.length || 0) > (diagnosticSource.match(/>/g)?.length || 0)) {
     diagnostics.push('Hay una etiqueta sin cerrar.')
   }
 
@@ -12412,7 +12417,7 @@ function getImportedCodeDiagnostics(value: string, language = 'html') {
     const stack: string[] = []
     const tagRegex = /<\/?([A-Za-z][\w:-]*)\b[^>]*>/g
     let match: RegExpExecArray | null
-    while ((match = tagRegex.exec(value))) {
+    while ((match = tagRegex.exec(diagnosticSource))) {
       const fullTag = match[0]
       const tagName = match[1].toLowerCase()
       if (voidTags.has(tagName) || fullTag.startsWith('<!--') || fullTag.startsWith('<!') || fullTag.endsWith('/>')) continue
@@ -15045,7 +15050,7 @@ const ImportedHtmlEditorPanel: React.FC<{
     }
   }, [activeCodePreviewHtml, codeEditorOpen, guardedCodePreviewHtml, openCodeButtonEditorForElement, openCodeElementEditorForElement, selectImportedCodePreviewElement])
 
-  const codeAssistantProgressPercent = getImportedCodeAssistantProgressPercent(codeAssistantWorkSteps)
+  const codeAssistantActivityLabel = getImportedCodeAssistantActivityLabel(codeAssistantWorkSteps, codeAssistantSaving)
 
   if (codeEditorOpen) {
     return (
@@ -15150,19 +15155,10 @@ const ImportedHtmlEditorPanel: React.FC<{
           {codeAssistantOpen && (
             <div className={styles.importedCodeAssistantPanel}>
               <div className={styles.importedCodeAssistantRun} aria-live="polite">
-                {codeAssistantWorkSteps.length > 0 ? (
-                  <div
-                    className={[
-                      styles.importedCodeAssistantLinearTrack,
-                      codeAssistantSaving ? styles.importedCodeAssistantLinearTrackActive : ''
-                    ].filter(Boolean).join(' ')}
-                    role="progressbar"
-                    aria-label={codeAssistantSaving ? 'El asistente está editando el HTML' : 'Progreso del asistente de código'}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={codeAssistantProgressPercent}
-                  >
-                    <span style={{ width: `${codeAssistantProgressPercent}%` }} />
+                {codeAssistantActivityLabel ? (
+                  <div className={`${styles.importedCodeAssistantGlassStatus} ${codeAssistantSaving ? styles.importedCodeAssistantGlassStatusActive : ''}`}>
+                    <span className={styles.importedCodeAssistantGlassDot} aria-hidden="true" />
+                    <strong>{codeAssistantActivityLabel}</strong>
                   </div>
                 ) : (
                   <div className={styles.importedCodeAssistantEmptyState}>

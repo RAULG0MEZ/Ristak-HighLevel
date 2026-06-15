@@ -784,34 +784,46 @@
   color: var(--rstk-assistant-secondary);
 }
 
-.importedCodeAssistantLinearTrack {
-  position: relative;
-  height: 5px;
+.importedCodeAssistantGlassStatus {
+  width: max-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--rstk-assistant-border) 78%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--rstk-assistant-border) 58%, transparent);
+  background: color-mix(in srgb, var(--rstk-assistant-surface) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(1.12);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-background-primary) 58%, transparent),
+    0 10px 26px -22px rgba(15, 23, 42, 0.56);
+  color: var(--rstk-assistant-text);
+  padding: 8px 11px;
 }
 
-.importedCodeAssistantLinearTrack span {
-  position: absolute;
-  inset-block: 0;
-  left: 0;
-  min-width: 8%;
-  border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--color-primary) 84%, var(--rstk-assistant-surface) 16%),
-    color-mix(in srgb, var(--color-primary) 58%, var(--color-status-success) 42%)
-  );
-  transition: width 220ms ease;
+.importedCodeAssistantGlassStatus strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 780;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.importedCodeAssistantLinearTrackActive span::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
-  animation: importedAssistantLinearSweep 1.15s ease-in-out infinite;
+.importedCodeAssistantGlassDot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.importedCodeAssistantGlassStatusActive .importedCodeAssistantGlassDot {
+  animation: importedAssistantGlassPulse 1.16s ease-in-out infinite;
 }
 
 .importedCodeAssistantDock {
@@ -1007,13 +1019,16 @@
   }
 }
 
-@keyframes importedAssistantLinearSweep {
-  from {
-    transform: translateX(-100%);
+@keyframes importedAssistantGlassPulse {
+  0%,
+  100% {
+    opacity: 0.54;
+    transform: scale(0.82);
   }
 
-  to {
-    transform: translateX(100%);
+  50% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
