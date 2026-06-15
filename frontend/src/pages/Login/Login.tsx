@@ -1,7 +1,7 @@
 import React, { useState, FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Lock, User, Terminal, Copy, Check } from 'lucide-react'
-import { Button } from '@/components/common'
+import { Button, Logo } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { PHONE_APP_HOME_PATH, getPostAuthRedirectPath, type RedirectLocation } from '@/utils/phoneAccess'
 import styles from './Login.module.css'
@@ -11,21 +11,10 @@ type LoginLocationState = {
 } | null
 
 const LoginBrandLogo: React.FC<{ isPhoneLogin: boolean }> = ({ isPhoneLogin }) => (
-  <div className={`${styles.logo} ${isPhoneLogin ? styles.phoneLogo : ''}`}>
-    <picture className={styles.logoPicture}>
-      <source
-        type="image/webp"
-        srcSet="/logo-web-320.webp?v=1 320w, /logo-web-640.webp?v=1 640w"
-        sizes={isPhoneLogin ? '280px' : '240px'}
-      />
-      <img
-        src="/logo-web.png?v=2"
-        alt="Ristak"
-        className={styles.logoImage}
-        decoding="async"
-      />
-    </picture>
-  </div>
+  <Logo
+    size="2xl"
+    className={`${styles.brandLogo} ${isPhoneLogin ? styles.phoneBrandLogo : ''}`}
+  />
 )
 
 export const Login: React.FC = () => {

@@ -62,38 +62,29 @@ body.light .phoneLoginBox {
   margin-bottom: 1.15rem;
 }
 
+.logoContainer .brandLogo {
+  --ristak-logo-width: min(240px, 82vw);
+  --ristak-logo-height: 74px;
+  --ristak-logo-font-size: clamp(3.25rem, 19vw, 4.45rem);
+  color: var(--color-text-primary);
+}
+
+.logoContainer .phoneBrandLogo {
+  --ristak-logo-width: min(280px, 78vw);
+  --ristak-logo-height: 86px;
+  --ristak-logo-font-size: clamp(3.6rem, 18vw, 5.1rem);
+  color: #111111;
+}
+
 .logo {
-  width: min(240px, 82vw);
-  height: 74px;
+  width: 4rem;
+  height: 4rem;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.phoneLogo {
-  width: min(280px, 78vw);
-  height: 86px;
-}
-
-.logoPicture {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.logoImage {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-
-body.dark .logoImage {
-  filter: invert(1) brightness(1.18);
-}
-
-body.dark .phoneLoginBox .logoImage {
-  filter: none;
+  border-radius: 1rem;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--color-text-secondary);
 }
 
 .title {
