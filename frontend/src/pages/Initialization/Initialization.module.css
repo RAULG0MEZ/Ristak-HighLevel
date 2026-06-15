@@ -44,7 +44,11 @@
 }
 
 .heroTitle {
-  margin: 1rem 0 0.2rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 1rem 0 0.5rem;
   font-size: 1.9rem;
   line-height: 1.15;
   font-weight: 700;
@@ -52,10 +56,10 @@
 }
 
 .heroLogo {
-  --ristak-logo-width: 136px;
-  --ristak-logo-height: 42px;
+  --ristak-logo-width: 92px;
+  --ristak-logo-height: 28px;
 
-  margin-bottom: 0.55rem;
+  transform: translateY(-0.02em);
 }
 
 .heroSubtitle {
