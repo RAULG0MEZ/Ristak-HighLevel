@@ -555,7 +555,8 @@ export function conditionSummary(condition: AgentCondition, calendars: Calendar[
     adName: (id) => options?.ads.find((item) => item.id === id)?.name || id || '…',
     phoneLabel: (id) => options?.businessPhones.find((item) => item.id === id)?.label || id || '…',
     tagName: (id) => {
-      const tag = (contactTagsService.getCachedTags() || []).find((item) => item.id === id)
+      const tag = (contactTagsService.getCachedTags({ includeSystem: true }) || contactTagsService.getCachedTags() || [])
+        .find((item) => item.id === id)
       return tag?.name || id || '…'
     },
     customFieldLabel: (key) => options?.customFields?.find((item) => item.key === key)?.label || key || 'el campo'

@@ -3785,6 +3785,12 @@ async function initTables() {
     }
 
     try {
+      await cleanupReservedSystemContactTags()
+    } catch (err) {
+      logger.warn('Advertencia al limpiar etiquetas internas de contactos:', err.message)
+    }
+
+    try {
       await db.run("ALTER TABLE appointment_reminders ADD COLUMN no_confirm_action TEXT DEFAULT 'no_action'")
     } catch (_) { /* columna ya existe */ }
 
@@ -3829,9 +3835,37 @@ async function initTables() {
  * durante el top-level await de initTables().
  */
 
-// IDs de las etiquetas internas calculadas (viven en contactTagsService; se
-// duplican aquí para no crear un ciclo de imports durante initTables)
-const SYSTEM_TAG_SLUG_IDS = new Set(['client', 'booked', 'lead'])
+// IDs/nombres de las etiquetas internas calculadas (viven en contactTagsService;
+// se duplican aquí para no crear un ciclo de imports durante initTables).
+const SYSTEM_TAG_ALIASES = {
+  client: 'client',
+  customer: 'client',
+  cliente: 'client',
+  booked: 'booked',
+  appointment: 'booked',
+  cita: 'booked',
+  cita_agendada: 'booked',
+  lead: 'lead',
+  prospecto: 'lead',
+  tag_sys_customer: 'client',
+  tag_sys_appointment: 'booked',
+  tag_sys_lead: 'lead'
+}
+const SYSTEM_TAG_SLUG_IDS = new Set(Object.keys(SYSTEM_TAG_ALIASES))
+const SYSTEM_TAG_NAMES = new Set(['cliente', 'cita agendada', 'prospecto'])
+
+function normalizeSystemTagValue(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function isReservedSystemTagValue(value) {
+  const normalized = normalizeSystemTagValue(value)
+  return SYSTEM_TAG_SLUG_IDS.has(normalized) || SYSTEM_TAG_NAMES.has(normalized)
+}
 
 /** Slug legible para el ID de una etiqueta: "Carromagic" → carromagic */
 function tagSlug(name) {
@@ -3880,13 +3914,16 @@ async function migrateLegacyContactTagsToCatalog() {
       continue
     }
     if (!Array.isArray(tags) || tags.length === 0) continue
-    if (tags.every((value) => idsInCatalog.has(String(value)) || SYSTEM_TAG_SLUG_IDS.has(String(value)) || String(value).startsWith('tag_sys_'))) continue
+    if (tags.every((value) => idsInCatalog.has(String(value)) || isReservedSystemTagValue(value))) continue
 
     const next = []
     for (const value of tags) {
       const raw = String(value || '').trim()
       if (!raw) continue
-      if (idsInCatalog.has(raw) || SYSTEM_TAG_SLUG_IDS.has(raw)) {
+      if (isReservedSystemTagValue(raw)) {
+        continue
+      }
+      if (idsInCatalog.has(raw)) {
         next.push(raw)
         continue
       }
@@ -3907,6 +3944,43 @@ async function migrateLegacyContactTagsToCatalog() {
   }
   if (migrated > 0) {
     logger.info(`Etiquetas de contactos migradas a IDs de catálogo en ${migrated} contactos`)
+  }
+}
+
+async function cleanupReservedSystemContactTags() {
+  const catalogRows = await db.all('SELECT id, name FROM contact_tags').catch(() => [])
+  const reservedRows = catalogRows.filter((row) => (
+    isReservedSystemTagValue(row.id) || isReservedSystemTagValue(row.name)
+  ))
+  const reservedIds = new Set(reservedRows.map((row) => String(row.id)))
+
+  for (const row of reservedRows) {
+    await db.run('DELETE FROM contact_tags WHERE id = ?', [row.id])
+  }
+
+  const contactRows = await db.all(
+    `SELECT id, tags FROM contacts WHERE tags IS NOT NULL AND tags != '[]' AND tags != ''`
+  ).catch(() => [])
+  let cleanedContacts = 0
+  for (const row of contactRows) {
+    let tags
+    try {
+      tags = JSON.parse(row.tags)
+    } catch {
+      continue
+    }
+    if (!Array.isArray(tags)) continue
+    const next = tags.filter((value) => {
+      const raw = String(value || '').trim()
+      return raw && !reservedIds.has(raw) && !isReservedSystemTagValue(raw)
+    })
+    if (next.length === tags.length) continue
+    await db.run('UPDATE contacts SET tags = ? WHERE id = ?', [JSON.stringify([...new Set(next)]), row.id])
+    cleanedContacts += 1
+  }
+
+  if (reservedRows.length > 0 || cleanedContacts > 0) {
+    logger.info(`Etiquetas internas retiradas del catálogo editable: ${reservedRows.length}; contactos limpiados: ${cleanedContacts}`)
   }
 }
 

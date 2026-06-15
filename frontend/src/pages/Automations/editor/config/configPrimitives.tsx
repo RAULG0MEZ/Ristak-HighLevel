@@ -107,6 +107,7 @@ interface CatalogSelectProps {
   catalog: CatalogKind
   value: string
   placeholder?: string
+  includeSystemTags?: boolean
   'aria-label'?: string
   /** Recibe el valor y la etiqueta legible de la opción elegida */
   onChange: (value: string, label: string) => void
@@ -116,6 +117,7 @@ export const CatalogSelect: React.FC<CatalogSelectProps> = ({
   catalog,
   value,
   placeholder,
+  includeSystemTags = false,
   onChange,
   ...rest
 }) => {
@@ -127,7 +129,7 @@ export const CatalogSelect: React.FC<CatalogSelectProps> = ({
       <TagPicker
         value={value}
         onValueChange={(next, label) => onChange(next, label)}
-        includeSystem
+        includeSystem={includeSystemTags}
         allowCreate
         portal
         size="large"
@@ -210,9 +212,10 @@ export const CatalogSelect: React.FC<CatalogSelectProps> = ({
 export const CatalogTags: React.FC<{
   catalog: CatalogKind
   values: string[]
+  includeSystemTags?: boolean
   onChange: (values: string[]) => void
   'aria-label'?: string
-}> = ({ catalog, values, onChange, ...rest }) => {
+}> = ({ catalog, values, includeSystemTags = false, onChange, ...rest }) => {
   const { options, loading } = useCatalogOptions(catalog)
   const remaining = options.filter((option) => !values.includes(option.value))
 
@@ -223,6 +226,7 @@ export const CatalogTags: React.FC<{
         multiple
         selectedIds={values}
         onChange={onChange}
+        includeSystem={includeSystemTags}
         allowCreate
         portal
         size="large"

@@ -209,6 +209,7 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
             <CatalogSelect
               catalog={field.catalog || 'tags'}
               value={str(config[field.key])}
+              includeSystemTags={Boolean(field.includeSystemTags)}
               onChange={(value, label) =>
                 onChange({ ...config, [field.key]: value, [`${field.key}Name`]: label })
               }
@@ -224,6 +225,7 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
             <CatalogTags
               catalog={field.catalog || 'tags'}
               values={Array.isArray(config[field.key]) ? (config[field.key] as string[]) : []}
+              includeSystemTags={Boolean(field.includeSystemTags)}
               onChange={(values) => setValue(field.key, values)}
               aria-label={field.label}
             />

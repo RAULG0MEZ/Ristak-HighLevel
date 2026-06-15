@@ -13,15 +13,15 @@ import styles from './TagPicker.module.css'
  * editar ni asignar manualmente.
  */
 
-export function useContactTags() {
-  const [tags, setTags] = useState<ContactTag[]>(() => contactTagsService.getCachedTags() || [])
-  const [loading, setLoading] = useState(!contactTagsService.getCachedTags())
+export function useContactTags(includeSystem = false) {
+  const [tags, setTags] = useState<ContactTag[]>(() => contactTagsService.getCachedTags({ includeSystem }) || [])
+  const [loading, setLoading] = useState(!contactTagsService.getCachedTags({ includeSystem }))
 
   useEffect(() => {
-    const unsubscribe = contactTagsService.subscribe(setTags)
-    contactTagsService.getTags().finally(() => setLoading(false))
+    const unsubscribe = contactTagsService.subscribe(setTags, { includeSystem })
+    contactTagsService.getTags({ includeSystem }).finally(() => setLoading(false))
     return unsubscribe
-  }, [])
+  }, [includeSystem])
 
   return { tags, loading }
 }
@@ -69,7 +69,7 @@ export const TagPicker: React.FC<TagPickerProps> = (props) => {
   } = props
   const isMultiple = props.multiple === true
 
-  const { tags, loading } = useContactTags()
+  const { tags, loading } = useContactTags(includeSystem)
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)

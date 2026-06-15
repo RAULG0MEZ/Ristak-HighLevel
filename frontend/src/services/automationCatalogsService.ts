@@ -74,7 +74,7 @@ export const STANDARD_CONTACT_FIELDS: CatalogOption[] = [
   { value: 'lastChannel', label: 'Último canal de contacto', meta: 'texto' }
 ]
 
-/** Etiquetas reales del catálogo (incluye las internas, marcadas) */
+/** Etiquetas editables del usuario; los estados internos se piden aparte cuando un filtro los necesita. */
 async function loadTags(): Promise<CatalogOption[]> {
   const tags = await contactTagsService.getTags(true)
   return tags.map((tag) => ({

@@ -1,6 +1,7 @@
 import express from 'express'
 import {
   getContactTags,
+  getSystemContactTags,
   getContactTagsCatalog,
   createContactTagHandler,
   updateContactTagHandler,
@@ -16,6 +17,7 @@ router.use(requireAuth)
 
 // Las rutas fijas van antes de '/:id'
 router.get('/catalog', getContactTagsCatalog)
+router.get('/system', getSystemContactTags)
 router.post('/folders', createContactTagFolderHandler)
 router.delete('/folders/:id', deleteContactTagFolderHandler)
 

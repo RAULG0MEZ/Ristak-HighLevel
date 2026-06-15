@@ -24,14 +24,31 @@ export const SYSTEM_TAGS = [
 export const LEGACY_SYSTEM_TAG_ALIASES = {
   tag_sys_customer: 'client',
   tag_sys_appointment: 'booked',
-  tag_sys_lead: 'lead'
+  tag_sys_lead: 'lead',
+  cliente: 'client',
+  customer: 'client',
+  booked: 'booked',
+  cita: 'booked',
+  cita_agendada: 'booked',
+  appointment: 'booked',
+  prospecto: 'lead',
+  lead: 'lead'
 }
 
 const SYSTEM_TAG_IDS = new Set(SYSTEM_TAGS.map((tag) => tag.id))
+const SYSTEM_TAG_NAMES = new Set(SYSTEM_TAGS.map((tag) => normalizeTagName(tag.name)))
 
 export function isSystemTagId(id) {
   const clean = String(id || '')
   return SYSTEM_TAG_IDS.has(clean) || Boolean(LEGACY_SYSTEM_TAG_ALIASES[clean])
+}
+
+export function isSystemTagName(name) {
+  return SYSTEM_TAG_NAMES.has(normalizeTagName(name))
+}
+
+function isSystemLikeTagRow(row) {
+  return isSystemTagId(row?.id) || isSystemTagName(row?.name)
 }
 
 /** Devuelve el ID interno actual (acepta los alias viejos tag_sys_*) */
@@ -89,21 +106,23 @@ function mapFolderRow(row) {
   }
 }
 
-/** Lista completa: etiquetas del sistema primero, luego las del usuario. */
-export async function listContactTags() {
+export function listSystemContactTags() {
+  return SYSTEM_TAGS.map((tag) => ({ ...tag, isSystem: true }))
+}
+
+/** Lista etiquetas del usuario; las internas sólo se anexan si se piden explícitamente. */
+export async function listContactTags({ includeSystem = false } = {}) {
   const rows = await db.all('SELECT * FROM contact_tags ORDER BY name COLLATE NOCASE ASC')
     .catch(async () => db.all('SELECT * FROM contact_tags ORDER BY LOWER(name) ASC'))
-  return [
-    ...SYSTEM_TAGS.map((tag) => ({ ...tag, isSystem: true })),
-    ...rows.map(mapRow)
-  ]
+  const customTags = rows.filter((row) => !isSystemLikeTagRow(row)).map(mapRow)
+  return includeSystem ? [...listSystemContactTags(), ...customTags] : customTags
 }
 
 async function findCustomTagByName(name) {
   const normalized = normalizeTagName(name)
   if (!normalized) return null
   const rows = await db.all('SELECT * FROM contact_tags')
-  return rows.find((row) => normalizeTagName(row.name) === normalized) || null
+  return rows.find((row) => !isSystemLikeTagRow(row) && normalizeTagName(row.name) === normalized) || null
 }
 
 export async function getContactTag(id) {
@@ -133,6 +152,9 @@ export async function createContactTag(name, { folderId = null } = {}) {
   const clean = String(name || '').trim().slice(0, 60)
   if (!clean) {
     throw Object.assign(new Error('El nombre de la etiqueta no puede estar vacío'), { statusCode: 400 })
+  }
+  if (isSystemTagName(clean) || isSystemTagId(slugifyTagId(clean))) {
+    throw Object.assign(new Error('Ese nombre está reservado para el estado interno del contacto'), { statusCode: 400 })
   }
   const existing = await findCustomTagByName(clean)
   if (existing) return mapRow(existing)
@@ -170,6 +192,9 @@ export async function updateContactTag(id, { name, folderId } = {}) {
     const clean = String(name || '').trim().slice(0, 60)
     if (!clean) {
       throw Object.assign(new Error('El nombre de la etiqueta no puede estar vacío'), { statusCode: 400 })
+    }
+    if (isSystemTagName(clean) || isSystemTagId(slugifyTagId(clean))) {
+      throw Object.assign(new Error('Ese nombre está reservado para el estado interno del contacto'), { statusCode: 400 })
     }
     const duplicate = await findCustomTagByName(clean)
     if (duplicate && duplicate.id !== id) {
@@ -291,7 +316,7 @@ export async function resolveTagIds(values, { createMissing = false } = {}) {
 
   const resolved = []
   for (const value of list) {
-    if (isSystemTagId(value)) continue // las internas no se guardan en contacts.tags
+    if (isSystemTagId(value) || isSystemTagName(value)) continue // las internas no se guardan en contacts.tags
     if (byId.has(value)) {
       resolved.push(value)
       continue
@@ -387,4 +412,3 @@ export async function buildTagMatchKeys(contactId, storedTags = null) {
 
   return keys
 }
-

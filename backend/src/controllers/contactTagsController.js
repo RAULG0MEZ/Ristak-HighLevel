@@ -1,5 +1,6 @@
 import {
   listContactTags,
+  listSystemContactTags,
   createContactTag,
   updateContactTag,
   deleteContactTag,
@@ -10,10 +11,11 @@ import {
 } from '../services/contactTagsService.js'
 import { logger } from '../utils/logger.js'
 
-/** GET /api/contact-tags — catálogo completo (internas + del usuario) */
+/** GET /api/contact-tags — etiquetas editables del usuario; internas sólo con includeSystem=true */
 export const getContactTags = async (req, res) => {
   try {
-    const tags = await listContactTags()
+    const includeSystem = String(req.query.includeSystem || '') === 'true'
+    const tags = await listContactTags({ includeSystem })
     const includeUsage = String(req.query.includeUsage || '') === 'true'
     if (includeUsage) {
       const usage = await getContactTagUsage()
@@ -29,11 +31,17 @@ export const getContactTags = async (req, res) => {
   }
 }
 
+/** GET /api/contact-tags/system — estados internos calculados por el sistema */
+export const getSystemContactTags = async (_req, res) => {
+  res.json({ success: true, data: listSystemContactTags() })
+}
+
 /** GET /api/contact-tags/catalog — etiquetas (con uso) + carpetas en una llamada */
 export const getContactTagsCatalog = async (req, res) => {
   try {
+    const includeSystem = String(req.query.includeSystem || '') === 'true'
     const [tags, folders, usage] = await Promise.all([
-      listContactTags(),
+      listContactTags({ includeSystem }),
       listContactTagFolders(),
       getContactTagUsage()
     ])

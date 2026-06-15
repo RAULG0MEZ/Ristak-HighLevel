@@ -109,6 +109,8 @@ export interface ConfigField {
   options?: ConfigFieldOption[]
   /** Catálogo CRM para selects dinámicos (etiquetas, calendarios…) */
   catalog?: CatalogKind
+  /** Sólo para catálogos de etiquetas: incluye estados internos calculados */
+  includeSystemTags?: boolean
   /** Muestra las variables de contacto disponibles bajo el campo */
   showVariables?: boolean
   /** Texto fijo para campos tipo info */

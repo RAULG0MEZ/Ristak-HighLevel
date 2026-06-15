@@ -30,59 +30,119 @@ export interface ContactTagsCatalog {
 }
 
 type TagsListener = (tags: ContactTag[]) => void
+type GetTagsOptions = boolean | {
+  forceRefresh?: boolean
+  includeSystem?: boolean
+}
 
-let cachedTags: ContactTag[] | null = null
-let pendingLoad: Promise<ContactTag[]> | null = null
-const listeners = new Set<TagsListener>()
+let cachedUserTags: ContactTag[] | null = null
+let cachedTagsWithSystem: ContactTag[] | null = null
+let pendingUserLoad: Promise<ContactTag[]> | null = null
+let pendingSystemLoad: Promise<ContactTag[]> | null = null
+const listeners = new Set<{ listener: TagsListener; includeSystem: boolean }>()
 
-function notify(tags: ContactTag[]) {
-  cachedTags = tags
-  listeners.forEach((listener) => listener(tags))
+function normalizeGetTagsOptions(options?: GetTagsOptions) {
+  if (typeof options === 'boolean') return { forceRefresh: options, includeSystem: false }
+  return {
+    forceRefresh: Boolean(options?.forceRefresh),
+    includeSystem: Boolean(options?.includeSystem)
+  }
+}
+
+function cacheFor(includeSystem: boolean) {
+  return includeSystem ? cachedTagsWithSystem : cachedUserTags
+}
+
+function setCache(includeSystem: boolean, tags: ContactTag[]) {
+  if (includeSystem) {
+    cachedTagsWithSystem = tags
+    cachedUserTags = tags.filter((tag) => !tag.isSystem)
+  } else {
+    cachedUserTags = tags
+  }
+}
+
+function notify(includeSystem: boolean, tags: ContactTag[]) {
+  setCache(includeSystem, tags)
+  listeners.forEach((entry) => {
+    const current = cacheFor(entry.includeSystem)
+    if (current) entry.listener(current)
+  })
+}
+
+function invalidateCaches() {
+  cachedUserTags = null
+  cachedTagsWithSystem = null
+  pendingUserLoad = null
+  pendingSystemLoad = null
+}
+
+async function refreshAfterMutation() {
+  const hadSystemCache = Boolean(cachedTagsWithSystem)
+  invalidateCaches()
+  await contactTagsService.getTags({ forceRefresh: true, includeSystem: false })
+  if (hadSystemCache) {
+    await contactTagsService.getTags({ forceRefresh: true, includeSystem: true })
+  }
 }
 
 export const contactTagsService = {
-  /** Lista con caché compartida (los pickers de toda la app la reutilizan). */
-  async getTags(forceRefresh = false): Promise<ContactTag[]> {
-    if (cachedTags && !forceRefresh) return cachedTags
-    if (!pendingLoad) {
-      pendingLoad = apiClient
-        .get<ContactTag[]>('/contact-tags')
+  /** Lista con caché compartida. Por defecto devuelve sólo etiquetas del usuario. */
+  async getTags(options?: GetTagsOptions): Promise<ContactTag[]> {
+    const { forceRefresh, includeSystem } = normalizeGetTagsOptions(options)
+    const cached = cacheFor(includeSystem)
+    if (cached && !forceRefresh) return cached
+    const pendingKey = includeSystem ? pendingSystemLoad : pendingUserLoad
+    if (!pendingKey) {
+      const request = apiClient
+        .get<ContactTag[]>('/contact-tags', includeSystem ? { params: { includeSystem: 'true' } } : undefined)
         .then((tags) => {
           const list = Array.isArray(tags) ? tags : []
-          notify(list)
+          notify(includeSystem, list)
           return list
         })
         .finally(() => {
-          pendingLoad = null
+          if (includeSystem) pendingSystemLoad = null
+          else pendingUserLoad = null
         })
+      if (includeSystem) pendingSystemLoad = request
+      else pendingUserLoad = request
     }
-    return pendingLoad
+    return includeSystem ? pendingSystemLoad! : pendingUserLoad!
   },
 
   async getTagsWithUsage(): Promise<ContactTag[]> {
     const tags = await apiClient.get<ContactTag[]>('/contact-tags', { params: { includeUsage: 'true' } })
     const list = Array.isArray(tags) ? tags : []
-    notify(list)
+    notify(false, list)
     return list
   },
 
+  async getSystemTags(): Promise<ContactTag[]> {
+    return apiClient.get<ContactTag[]>('/contact-tags/system')
+  },
+
   /** Etiquetas (con conteo de uso) + carpetas en una sola llamada */
-  async getCatalog(): Promise<ContactTagsCatalog> {
-    const catalog = await apiClient.get<ContactTagsCatalog>('/contact-tags/catalog')
+  async getCatalog(options: { includeSystem?: boolean } = {}): Promise<ContactTagsCatalog> {
+    const includeSystem = Boolean(options.includeSystem)
+    const catalog = await apiClient.get<ContactTagsCatalog>(
+      '/contact-tags/catalog',
+      includeSystem ? { params: { includeSystem: 'true' } } : undefined
+    )
     const tags = Array.isArray(catalog?.tags) ? catalog.tags : []
-    notify(tags)
+    notify(includeSystem, tags)
     return { tags, folders: Array.isArray(catalog?.folders) ? catalog.folders : [] }
   },
 
   async createTag(name: string, folderId?: string): Promise<ContactTag> {
     const tag = await apiClient.post<ContactTag>('/contact-tags', { name, folderId })
-    await contactTagsService.getTags(true)
+    await refreshAfterMutation()
     return tag
   },
 
   async updateTag(id: string, patch: { name?: string; folderId?: string }): Promise<ContactTag> {
     const tag = await apiClient.put<ContactTag>(`/contact-tags/${id}`, patch)
-    await contactTagsService.getTags(true)
+    await refreshAfterMutation()
     return tag
   },
 
@@ -96,12 +156,12 @@ export const contactTagsService = {
 
   async deleteFolder(id: string): Promise<void> {
     await apiClient.delete(`/contact-tags/folders/${id}`)
-    await contactTagsService.getTags(true)
+    await refreshAfterMutation()
   },
 
   async deleteTag(id: string): Promise<void> {
     await apiClient.delete(`/contact-tags/${id}`)
-    await contactTagsService.getTags(true)
+    await refreshAfterMutation()
   },
 
   /** Añade/quita etiquetas a varios contactos a la vez (selección múltiple). */
@@ -114,13 +174,15 @@ export const contactTagsService = {
   },
 
   /** Suscripción a cambios del catálogo (para refrescar pickers abiertos). */
-  subscribe(listener: TagsListener): () => void {
-    listeners.add(listener)
-    if (cachedTags) listener(cachedTags)
-    return () => listeners.delete(listener)
+  subscribe(listener: TagsListener, options: { includeSystem?: boolean } = {}): () => void {
+    const entry = { listener, includeSystem: Boolean(options.includeSystem) }
+    listeners.add(entry)
+    const cached = cacheFor(entry.includeSystem)
+    if (cached) listener(cached)
+    return () => listeners.delete(entry)
   },
 
-  getCachedTags(): ContactTag[] | null {
-    return cachedTags
+  getCachedTags(options: { includeSystem?: boolean } = {}): ContactTag[] | null {
+    return cacheFor(Boolean(options.includeSystem))
   }
 }
