@@ -5026,6 +5026,8 @@ JSON cuando esta listo con varias páginas:
 ${editMode ? `
 Modo edición:
 - Recibiras el HTML actual y la peticion del usuario.
+- Esta prohibido responderle al usuario dentro del HTML. No agregues textos como "Claro", "Aqui tienes", "He creado", "Listo", explicaciones, resúmenes, notas del asistente ni la solicitud/prompt del usuario como contenido visible de la página.
+- Aplica cambios en silencio: la página final solo debe contener el sitio editado. El campo reply del JSON debe ser breve y operativo, nunca contenido para mostrar dentro del HTML.
 - Si recibes visualContext, úsalo como referencia visual de la página actual: ubica logos, imágenes, botones, formularios, colores, textos visibles y la página activa antes de editar.
 - Devuelve el HTML completo actualizado, no solo un fragmento.
 - Si recibes importedPages con varias páginas, conserva el embudo multipágina y responde con page.pages incluyendo todas las páginas completas. Mantén ids, title y filename de cada página salvo que el usuario pida renombrar, agregar, quitar o reordenar páginas.
@@ -5291,6 +5293,72 @@ function normalizeAIHtmlPagePayload(aiPayload = {}, siteKind = 'landing') {
     html,
     pages: pages.length ? pages : []
   }
+}
+
+function normalizeSitesAIComparableText(value = '') {
+  return decodeHtmlEntities(String(value || ''))
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+function getSitesAIVisibleHtmlText(html = '') {
+  const withoutNonVisible = String(html || '')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<template\b[\s\S]*?<\/template>/gi, ' ')
+    .replace(/<head\b[\s\S]*?<\/head>/gi, ' ')
+  return normalizeSitesAIComparableText(stripHtmlTags(withoutNonVisible))
+}
+
+function getSitesAIEditorUserRequestFragments(messages = [], aiRegionRequest = '') {
+  const fragments = [
+    cleanString(aiRegionRequest),
+    getImportedAIRegionUserRequestText(getSitesAIConversationText(messages))
+  ]
+  return [...new Set(fragments
+    .map(fragment => normalizeSitesAIComparableText(fragment))
+    .filter(fragment => fragment.length >= 16 && fragment.length <= 260))]
+}
+
+const SITES_AI_EDITOR_REPLY_PATTERNS = [
+  /\bclaro[,!.]?\s+(aqui|te|he|lo|voy|vamos)\b/,
+  /\bpor supuesto[,!.]?\s+(aqui|te|he|lo|voy|vamos)\b/,
+  /\baqui tienes\b/,
+  /\bte dejo\b/,
+  /\bte (hice|cree|prepare|actualice|edite)\b/,
+  /\bhe (creado|preparado|actualizado|editado|hecho)\b/,
+  /\bcomo (pediste|solicitaste|me pediste)\b/,
+  /\blisto[,!.]?\s+(ya|he|te|queda|quedo)\b/
+]
+
+export function getSitesAIEditorReplyContaminationReason(page = {}, { messages = [], aiRegionRequest = '' } = {}) {
+  const htmlValues = []
+  if (cleanString(page.html)) htmlValues.push(String(page.html || ''))
+  if (Array.isArray(page.pages)) {
+    page.pages.forEach(nextPage => {
+      if (cleanString(nextPage?.html)) htmlValues.push(String(nextPage.html || ''))
+    })
+  }
+  if (!htmlValues.length) return ''
+
+  const visibleText = normalizeSitesAIComparableText(htmlValues.map(getSitesAIVisibleHtmlText).filter(Boolean).join(' '))
+  if (!visibleText) return ''
+
+  const promptEcho = getSitesAIEditorUserRequestFragments(messages, aiRegionRequest)
+    .find(fragment => visibleText.includes(fragment))
+  if (promptEcho) return 'prompt_echo'
+
+  const openingText = visibleText.slice(0, 1200)
+  if (SITES_AI_EDITOR_REPLY_PATTERNS.some(pattern => pattern.test(openingText))) {
+    return 'assistant_reply_copy'
+  }
+
+  return ''
 }
 
 function hasSitesAIHtmlPayload(aiPayload = {}) {
@@ -8426,6 +8494,26 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   }
 
   const aiPage = normalizeAIHtmlPagePayload(aiPayload, siteKind)
+  const replyContaminationReason = getSitesAIEditorReplyContaminationReason(aiPage, {
+    messages,
+    aiRegionRequest
+  })
+  if (replyContaminationReason) {
+    debug.finalStatus = replyContaminationReason
+    addSitesAIEditDebugStep(debug, `La respuesta IA fue bloqueada porque intentó escribir una respuesta del asistente dentro del HTML (${replyContaminationReason}).`)
+    addSitesAIEditProgressStep(debug, {
+      id: 'assistant_reply_blocked',
+      label: 'Respuesta bloqueada',
+      detail: 'La IA intentó contestar dentro de la página en vez de aplicar solo el cambio.',
+      status: 'error'
+    })
+    return {
+      status: 'needs_more_info',
+      reason: replyContaminationReason,
+      reply: 'El asistente intentó escribir una respuesta dentro de la página. No se aplicó al HTML.',
+      debug: getSitesAIEditDebugPayload(debug)
+    }
+  }
   addSitesAIEditProgressStep(debug, {
     id: 'normalize',
     label: 'HTML normalizado',

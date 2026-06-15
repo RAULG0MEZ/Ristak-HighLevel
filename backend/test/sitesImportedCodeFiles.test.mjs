@@ -121,9 +121,45 @@ test('AI HTML editor instructions stay scoped to active code only', async () => 
   assert.match(instructions, /Alcance privado del editor HTML/)
   assert.match(instructions, /Solo puedes usar el HTML\/CSS\/JS activo/)
   assert.match(instructions, /No tienes acceso al contexto del negocio/)
+  assert.match(instructions, /Esta prohibido responderle al usuario dentro del HTML/)
+  assert.match(instructions, /Aplica cambios en silencio/)
   assert.doesNotMatch(instructions, /Clinica secreta del negocio/)
   assert.doesNotMatch(instructions, /Mercado privado guardado/)
   assert.doesNotMatch(instructions, /Cliente ideal guardado/)
   assert.doesNotMatch(instructions, /Voz de marca del chatbot/)
   assert.doesNotMatch(instructions, /Contexto del negocio configurado en Ristak/)
+})
+
+test('AI HTML editor blocks assistant replies and prompt echoes inside page HTML', async () => {
+  const { getSitesAIEditorReplyContaminationReason } = await import('../src/services/sitesService.js')
+
+  const promptEchoPage = {
+    html: '<!doctype html><html><body><main><h1>Hazme un sitio web sobre perros</h1><p>Servicios para mascotas.</p></main></body></html>'
+  }
+  assert.equal(
+    getSitesAIEditorReplyContaminationReason(promptEchoPage, {
+      aiRegionRequest: 'Hazme un sitio web sobre perros'
+    }),
+    'prompt_echo'
+  )
+
+  const assistantReplyPage = {
+    html: '<!doctype html><html><body><main><p>Claro, aqui tienes el sitio web actualizado.</p><h1>Veterinaria Luna</h1></main></body></html>'
+  }
+  assert.equal(
+    getSitesAIEditorReplyContaminationReason(assistantReplyPage, {
+      aiRegionRequest: 'cambia el titulo'
+    }),
+    'assistant_reply_copy'
+  )
+
+  const cleanPage = {
+    html: '<!doctype html><html><body><main><h1>Veterinaria Luna</h1><p>Cuidado moderno para perros y gatos.</p></main></body></html>'
+  }
+  assert.equal(
+    getSitesAIEditorReplyContaminationReason(cleanPage, {
+      aiRegionRequest: 'Hazme un sitio web sobre perros'
+    }),
+    ''
+  )
 })
