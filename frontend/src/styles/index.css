@@ -18,14 +18,6 @@
 @import './tooltip-override.css';
 @import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap');
 
-@font-face {
-  font-family: 'Klavika Ristak';
-  src: url('/fonts/klavika-bold.otf') format('opentype');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -36,7 +28,6 @@
   --font-app: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   --font-display: var(--font-app);
-  --font-brand: 'Klavika Ristak', var(--font-display);
   --font-mono: 'SF Mono', 'Consolas', 'Monaco', monospace;
   --color-bg-primary: var(--color-background-primary);
   --app-page-max: 104rem;

@@ -65,15 +65,11 @@ body.light .phoneLoginBox {
 .logoContainer .brandLogo {
   --ristak-logo-width: min(240px, 82vw);
   --ristak-logo-height: 74px;
-  --ristak-logo-font-size: clamp(3.25rem, 19vw, 4.45rem);
-  color: var(--color-text-primary);
 }
 
 .logoContainer .phoneBrandLogo {
   --ristak-logo-width: min(280px, 78vw);
   --ristak-logo-height: 86px;
-  --ristak-logo-font-size: clamp(3.6rem, 18vw, 5.1rem);
-  color: #111111;
 }
 
 .logo {

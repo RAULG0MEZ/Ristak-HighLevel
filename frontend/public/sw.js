@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ristak-branding-v18'
+const CACHE_NAME = 'ristak-branding-v19'
 const DEFAULT_NOTIFICATION_TITLE = 'Notificación nueva'
 const DEFAULT_NOTIFICATION_BODY = 'Tienes una notificación nueva.'
 const SHELL_ASSETS = [
@@ -13,9 +13,10 @@ const SHELL_ASSETS = [
   '/manifest.phone-chat.webmanifest',
   '/favicon.svg',
   '/logo.svg',
-  '/logo-web.png',
-  '/logo-web-320.webp',
-  '/logo-web-640.webp',
+  '/logo-web-black-320.webp',
+  '/logo-web-black-640.webp',
+  '/logo-web-white-320.webp',
+  '/logo-web-white-640.webp',
   '/ristak-icon-192.png',
   '/ristak-icon-512.png',
   '/apple-touch-icon.png',

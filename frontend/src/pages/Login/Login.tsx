@@ -13,6 +13,7 @@ type LoginLocationState = {
 const LoginBrandLogo: React.FC<{ isPhoneLogin: boolean }> = ({ isPhoneLogin }) => (
   <Logo
     size="2xl"
+    variant={isPhoneLogin ? 'black' : 'auto'}
     className={`${styles.brandLogo} ${isPhoneLogin ? styles.phoneBrandLogo : ''}`}
   />
 )
