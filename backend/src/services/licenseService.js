@@ -259,6 +259,22 @@ export async function listCentralGoogleCalendars() {
   return Array.isArray(data.calendars) ? data.calendars : []
 }
 
+export async function upsertCentralGoogleCalendarEvent({ googleCalendarId, googleEventId = '', event = {} } = {}) {
+  const data = await callLicenseServer('/api/license/google-calendar/events/upsert', {
+    google_calendar_id: googleCalendarId,
+    google_event_id: googleEventId,
+    event
+  })
+  return data.event || {}
+}
+
+export async function deleteCentralGoogleCalendarEvent({ googleCalendarId, googleEventId } = {}) {
+  return callLicenseServer('/api/license/google-calendar/events/delete', {
+    google_calendar_id: googleCalendarId,
+    google_event_id: googleEventId
+  })
+}
+
 export async function disconnectCentralGoogleCalendar() {
   const data = await callLicenseServer('/api/license/google-calendar/disconnect')
   return data.calendar || {}

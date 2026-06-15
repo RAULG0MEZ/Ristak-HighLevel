@@ -434,9 +434,21 @@ export async function testGoogleCalendarIntegration(req, res) {
 export async function syncGoogleCalendarIntegration(req, res) {
   try {
     if (isLicenseEnforced()) {
+      const syncResult = await googleCalendarService.syncLocalAppointmentsToGoogle({
+        startTime: req.body?.startTime || req.body?.start_time,
+        endTime: req.body?.endTime || req.body?.end_time
+      });
+      const status = centralGoogleStatus(await getCentralGoogleCalendarStatus());
       return res.json({
         success: true,
-        data: centralGoogleStatus(await getCentralGoogleCalendarStatus())
+        data: {
+          ...status,
+          lastSyncAt: new Date().toISOString(),
+          lastSyncStatus: syncResult.failed > 0 ? 'warning' : 'success',
+          lastSyncMessage: `${syncResult.synced || 0} cita(s) sincronizadas con Google Calendar${syncResult.failed > 0 ? `; ${syncResult.failed} quedaron pendientes` : ''}`,
+          syncedCalendarsCount: syncResult.linkedCalendars || 0,
+          syncedEventsCount: syncResult.synced || 0
+        }
       });
     }
 
@@ -502,18 +514,20 @@ export async function updateCalendarGoogleSync(req, res) {
       ? await updateCentralCalendarGoogleSync({ calendarId: id, googleCalendarId })
       : await googleCalendarService.updateLocalCalendarGoogleSync({ calendarId: id, googleCalendarId });
 
-    if (!isLicenseEnforced() && calendar?.googleCalendarId) {
+    if (calendar?.googleCalendarId) {
       const now = new Date();
       const startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const endTime = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
-      await googleCalendarService.syncGoogleEventsToLocal({
-        startTime,
-        endTime,
-        calendarId: calendar.id
-      }).catch(error => {
-        logger.warn(`[Calendars Controller] Vinculo Google guardado, pero import inicial falló: ${error.message}`);
-      });
+      if (!isLicenseEnforced()) {
+        await googleCalendarService.syncGoogleEventsToLocal({
+          startTime,
+          endTime,
+          calendarId: calendar.id
+        }).catch(error => {
+          logger.warn(`[Calendars Controller] Vinculo Google guardado, pero import inicial falló: ${error.message}`);
+        });
+      }
 
       await googleCalendarService.syncLocalAppointmentsToGoogle({
         calendarId: calendar.id

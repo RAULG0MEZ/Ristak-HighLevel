@@ -4,6 +4,11 @@ import { decrypt, encrypt, isEncrypted } from '../utils/encryption.js'
 import { getAccountTimezone, normalizeToUtcIso } from '../utils/dateUtils.js'
 import { logger } from '../utils/logger.js'
 import * as localCalendarService from './localCalendarService.js'
+import {
+  deleteCentralGoogleCalendarEvent,
+  isLicenseEnforced,
+  upsertCentralGoogleCalendarEvent
+} from './licenseService.js'
 
 const CONFIG_KEY = 'google_calendar_service_account_config'
 const GOOGLE_TOKEN_URI = 'https://oauth2.googleapis.com/token'
@@ -813,15 +818,71 @@ async function markGoogleSyncSuccess(appointmentId, eventId) {
   return localCalendarService.getLocalAppointment(appointmentId)
 }
 
+async function resolveAppointment(appointmentOrId) {
+  return typeof appointmentOrId === 'string'
+    ? localCalendarService.getLocalAppointment(appointmentOrId)
+    : appointmentOrId
+}
+
+async function syncAppointmentToCentralGoogle(appointmentOrId) {
+  const appointment = await resolveAppointment(appointmentOrId)
+
+  if (!appointment?.id) {
+    return { enabled: true, appointment: null }
+  }
+
+  try {
+    const localCalendar = await localCalendarService.getLocalCalendar(appointment.calendarId)
+    const targetGoogleCalendarId = googleCalendarIdFromLocalCalendar(localCalendar)
+    if (!targetGoogleCalendarId) {
+      return {
+        enabled: false,
+        reason: 'calendar_not_linked',
+        appointment
+      }
+    }
+
+    const status = cleanString(appointment.appointmentStatus || appointment.status).toLowerCase()
+    if (status === 'cancelled' || status === 'canceled') {
+      await deleteGoogleEventForAppointment(appointment)
+      return {
+        enabled: true,
+        appointment: await localCalendarService.getLocalAppointment(appointment.id)
+      }
+    }
+
+    const timezone = await getAccountTimezone()
+    const event = await upsertCentralGoogleCalendarEvent({
+      googleCalendarId: targetGoogleCalendarId,
+      googleEventId: appointment.googleEventId,
+      event: buildGoogleEventPayload(appointment, timezone)
+    })
+    const eventId = event?.id || appointment.googleEventId
+
+    if (!eventId) {
+      throw new Error('Google Calendar no devolvio ID de evento')
+    }
+
+    const updated = await markGoogleSyncSuccess(appointment.id, eventId)
+    return { enabled: true, appointment: updated || appointment, event }
+  } catch (error) {
+    await markGoogleSyncError(appointment.id, error.message)
+    logger.warn(`[Google Calendar] No se pudo sincronizar cita ${appointment.id} por OAuth central: ${error.message}`)
+    throw error
+  }
+}
+
 export async function syncAppointmentToGoogle(appointmentOrId) {
+  if (isLicenseEnforced()) {
+    return syncAppointmentToCentralGoogle(appointmentOrId)
+  }
+
   const config = await getGoogleCalendarConfig({ includeCredentials: true })
   if (!config) {
     return { enabled: false, appointment: appointmentOrId }
   }
 
-  const appointment = typeof appointmentOrId === 'string'
-    ? await localCalendarService.getLocalAppointment(appointmentOrId)
-    : appointmentOrId
+  const appointment = await resolveAppointment(appointmentOrId)
 
   if (!appointment?.id) {
     return { enabled: true, appointment: null }
@@ -886,8 +947,9 @@ export async function syncAppointmentToGoogle(appointmentOrId) {
 }
 
 export async function syncLocalAppointmentsToGoogle({ calendarId = null, limit = 500 } = {}) {
-  const config = await getGoogleCalendarConfig({ includeCredentials: true })
-  if (!config) {
+  const centralMode = isLicenseEnforced()
+  const config = centralMode ? null : await getGoogleCalendarConfig({ includeCredentials: true })
+  if (!centralMode && !config) {
     return { enabled: false, total: 0, synced: 0, failed: 0 }
   }
 
@@ -1017,12 +1079,37 @@ export async function mergeRistakAppointmentsIntoGoogle({ sourceCalendarIds = nu
 }
 
 export async function deleteGoogleEventForAppointment(appointmentOrId) {
+  if (isLicenseEnforced()) {
+    const appointment = await resolveAppointment(appointmentOrId)
+
+    if (!appointment?.id || !appointment.googleEventId) {
+      return { enabled: true, deleted: false }
+    }
+
+    try {
+      const localCalendar = await localCalendarService.getLocalCalendar(appointment.calendarId)
+      const targetGoogleCalendarId = googleCalendarIdFromLocalCalendar(localCalendar)
+      if (!targetGoogleCalendarId) {
+        return { enabled: false, deleted: false, reason: 'calendar_not_linked' }
+      }
+
+      await deleteCentralGoogleCalendarEvent({
+        googleCalendarId: targetGoogleCalendarId,
+        googleEventId: appointment.googleEventId
+      })
+    } catch (error) {
+      await markGoogleSyncError(appointment.id, error.message)
+      throw error
+    }
+
+    await markGoogleSyncSuccess(appointment.id, null)
+    return { enabled: true, deleted: true }
+  }
+
   const config = await getGoogleCalendarConfig({ includeCredentials: true })
   if (!config) return { enabled: false }
 
-  const appointment = typeof appointmentOrId === 'string'
-    ? await localCalendarService.getLocalAppointment(appointmentOrId)
-    : appointmentOrId
+  const appointment = await resolveAppointment(appointmentOrId)
 
   if (!appointment?.id || !appointment.googleEventId) {
     return { enabled: true, deleted: false }
