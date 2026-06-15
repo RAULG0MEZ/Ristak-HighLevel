@@ -2226,10 +2226,49 @@
   background: rgba(var(--color-primary-rgb), 0.08);
 }
 
+.importedFieldChoiceMode {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.importedFieldChoiceMode span {
+  color: var(--color-text-tertiary);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.importedFieldChoiceMode strong {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  color: var(--color-text-primary);
+  padding: 0 10px;
+  font-size: 0.78rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.importedFieldChoiceMode small {
+  grid-column: 1 / -1;
+  color: var(--color-text-tertiary);
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 .importedFieldOptionItem {
   display: grid;
-  gap: 6px;
-  padding: 8px;
+  gap: 9px;
+  padding: 10px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
   background: color-mix(in srgb, var(--color-background-primary) 88%, var(--color-background-tertiary) 12%);
@@ -2250,16 +2289,13 @@
 
 .importedFieldOptionAction {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
+  gap: 6px;
 }
 
 .importedFieldOptionAction > span {
-  color: var(--color-text-tertiary);
-  font-size: 0.74rem;
-  font-weight: var(--font-weight-semibold, 600);
-  white-space: nowrap;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 850;
 }
 
 .importedFieldOptionAction input {
@@ -2307,13 +2343,25 @@
 
 .importedFieldOptionRow {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr) 76px;
-  gap: 7px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.82fr) auto;
+  gap: 8px;
+  align-items: end;
 }
 
 .importedCodeFieldMetaRow {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.importedFieldOptionInput {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.importedFieldOptionInput span {
+  color: var(--color-text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 780;
 }
 
 .importedFieldOptionRow input {
@@ -2364,6 +2412,8 @@
 :global([data-theme="dark"]) .importedActionField select,
 :global(body.dark) .importedActionField textarea,
 :global([data-theme="dark"]) .importedActionField textarea,
+:global(body.dark) .importedFieldOptionAction input,
+:global([data-theme="dark"]) .importedFieldOptionAction input,
 :global(body.dark) .importedFieldOptionRow input,
 :global([data-theme="dark"]) .importedFieldOptionRow input {
   color-scheme: dark;
@@ -2376,6 +2426,8 @@
 :global([data-theme="dark"]) .importedActionField input::placeholder,
 :global(body.dark) .importedActionField textarea::placeholder,
 :global([data-theme="dark"]) .importedActionField textarea::placeholder,
+:global(body.dark) .importedFieldOptionAction input::placeholder,
+:global([data-theme="dark"]) .importedFieldOptionAction input::placeholder,
 :global(body.dark) .importedFieldOptionRow input::placeholder,
 :global([data-theme="dark"]) .importedFieldOptionRow input::placeholder {
   color: #64748b;

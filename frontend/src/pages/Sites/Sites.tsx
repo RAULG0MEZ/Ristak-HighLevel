@@ -7881,6 +7881,7 @@ export const Sites: React.FC = () => {
                   saving={saving}
                   aiAgentAvailable={aiAgentConfigured}
                   importData={selectedImportData}
+                  customFields={customFields}
                   codeEditorOpen={true}
                   codeDrafts={importedCodeDrafts}
                   loadingImportData={loadingImportData}
@@ -9424,6 +9425,11 @@ type ImportedSelectedFieldRouteMatch = {
 type ImportedSelectedFieldRouteDraft = {
   destinationType: ImportedSiteFieldMapping['destinationType']
   destinationKey: string
+  customFieldDefinitionId?: string
+  customFieldKey?: string
+  customFieldLabel?: string
+  customFieldDataType?: string
+  customFieldSyncTarget?: string
 }
 
 const importedEditableSelector = [
@@ -12180,6 +12186,7 @@ const ImportedActionChainEditor: React.FC<{
 
 const ImportedFieldOptionsEditor: React.FC<{
   title: string
+  selectionMode?: 'single' | 'multiple'
   options: ImportedFormFieldOption[]
   targetPages: SitePage[]
   disabled?: boolean
@@ -12190,6 +12197,7 @@ const ImportedFieldOptionsEditor: React.FC<{
   onPatch: (index: number, patch: Partial<ImportedFormFieldOption>) => void
 }> = ({
   title,
+  selectionMode,
   options,
   targetPages,
   disabled = false,
@@ -12207,28 +12215,45 @@ const ImportedFieldOptionsEditor: React.FC<{
         Agregar
       </button>
     </div>
+    {selectionMode && (
+      <div className={styles.importedFieldChoiceMode}>
+        <span>Tipo de selección</span>
+        <strong>{selectionMode === 'multiple' ? 'Campo múltiple' : 'Campo único'}</strong>
+        <small>
+          {selectionMode === 'multiple'
+            ? 'El visitante puede marcar varias opciones.'
+            : 'El visitante solo puede elegir una opción.'}
+        </small>
+      </div>
+    )}
     {options.map((option, index) => (
       <div key={`${index}-${option.value}`} className={styles.importedFieldOptionItem}>
         <div className={styles.importedFieldOptionRow}>
-          <input
-            value={option.label}
-            disabled={disabled}
-            placeholder={`Opción ${index + 1}`}
-            name={`${namePrefix}-label-${index}`}
-            {...importedEditorNoAutocompleteAttrs}
-            onChange={(event) => onPatch(index, {
-              label: event.target.value,
-              value: option.value === option.label ? event.target.value : option.value
-            })}
-          />
-          <input
-            value={option.value}
-            disabled={disabled}
-            placeholder="valor"
-            name={`${namePrefix}-value-${index}`}
-            {...importedEditorNoAutocompleteAttrs}
-            onChange={(event) => onPatch(index, { value: event.target.value })}
-          />
+          <label className={styles.importedFieldOptionInput}>
+            <span>Texto visible</span>
+            <input
+              value={option.label}
+              disabled={disabled}
+              placeholder={`Opción ${index + 1}`}
+              name={`${namePrefix}-label-${index}`}
+              {...importedEditorNoAutocompleteAttrs}
+              onChange={(event) => onPatch(index, {
+                label: event.target.value,
+                value: option.value === option.label ? event.target.value : option.value
+              })}
+            />
+          </label>
+          <label className={styles.importedFieldOptionInput}>
+            <span>Valor interno</span>
+            <input
+              value={option.value}
+              disabled={disabled}
+              placeholder="valor"
+              name={`${namePrefix}-value-${index}`}
+              {...importedEditorNoAutocompleteAttrs}
+              onChange={(event) => onPatch(index, { value: event.target.value })}
+            />
+          </label>
           <div className={styles.importedFieldOptionRowActions}>
             <button type="button" onClick={() => onDuplicate(index)} disabled={disabled || options.length >= 30} aria-label={`Duplicar opción ${index + 1}`}>
               <Copy size={13} />
@@ -12239,7 +12264,7 @@ const ImportedFieldOptionsEditor: React.FC<{
           </div>
         </div>
         <label className={styles.importedFieldOptionAction}>
-          <span>Al elegirla</span>
+          <span>Al elegirla, ¿qué quieres que suceda?</span>
           <CustomSelect
             value={getImportedOptionQuickAction(option)}
             disabled={disabled}
@@ -12256,7 +12281,7 @@ const ImportedFieldOptionsEditor: React.FC<{
         </label>
         {getImportedOptionQuickAction(option) === 'specific_page' && (
           <label className={styles.importedFieldOptionAction}>
-            <span>Página</span>
+            <span>Página de este sitio</span>
             <CustomSelect
               value={option.actions?.[0]?.buttonPageId || ''}
               disabled={disabled}
@@ -12272,7 +12297,7 @@ const ImportedFieldOptionsEditor: React.FC<{
         )}
         {getImportedOptionQuickAction(option) === 'url' && (
           <label className={styles.importedFieldOptionAction}>
-            <span>URL</span>
+            <span>URL a donde se manda</span>
             <input
               value={option.actions?.[0]?.buttonUrl || ''}
               disabled={disabled}
@@ -12285,7 +12310,7 @@ const ImportedFieldOptionsEditor: React.FC<{
         )}
         {getImportedOptionQuickAction(option) === 'disqualify' && (
           <label className={styles.importedFieldOptionAction}>
-            <span>Mensaje</span>
+            <span>Mensaje de descalificación</span>
             <input
               value={option.actions?.[0]?.buttonMessage || ''}
               disabled={disabled}
@@ -12418,6 +12443,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   saving: boolean
   aiAgentAvailable: boolean
   importData: ImportedSiteImport | null
+  customFields: CustomFieldDefinition[]
   codeEditorOpen: boolean
   codeDrafts: Record<string, string>
   loadingImportData: boolean
@@ -12440,6 +12466,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   saving,
   aiAgentAvailable,
   importData,
+  customFields,
   codeEditorOpen,
   codeDrafts,
   loadingImportData,
@@ -12490,6 +12517,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   const [contentError, setContentError] = useState('')
   const [selectedFieldRouteDraft, setSelectedFieldRouteDraft] = useState<ImportedSelectedFieldRouteDraft | null>(null)
   const [selectedFieldRouteSaving, setSelectedFieldRouteSaving] = useState(false)
+  const [importedEditorCustomFields, setImportedEditorCustomFields] = useState<CustomFieldDefinition[]>(customFields)
   const [codeEditorWidth, setCodeEditorWidth] = useState(50)
   const codeEditorWidthRef = useRef(50)
   const [codeEditorTheme, setCodeEditorTheme] = useState<ImportedCodeTheme>('dark')
@@ -12544,6 +12572,26 @@ const ImportedHtmlEditorPanel: React.FC<{
     () => highlightImportedCode(activeCodeValue, activeCodeFile?.language || 'html'),
     [activeCodeFile?.language, activeCodeValue]
   )
+  useEffect(() => {
+    setImportedEditorCustomFields(customFields)
+  }, [customFields])
+
+  useEffect(() => {
+    if (customFields.length) return
+    let mounted = true
+    customFieldsService.listCatalog()
+      .then(catalog => {
+        if (!mounted) return
+        setImportedEditorCustomFields((catalog.fields || []).filter(field => !isSystemCustomFieldDefinition(field)))
+      })
+      .catch(() => {
+        if (mounted) setImportedEditorCustomFields([])
+      })
+    return () => {
+      mounted = false
+    }
+  }, [customFields.length])
+
   const mappingStats = useMemo(() => {
     const formMappings = Array.isArray(importData?.formMappings) ? importData.formMappings : []
     const fields = formMappings.flatMap(form => Array.isArray(form.fields) ? form.fields : [])
@@ -12556,6 +12604,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       ignored: fields.filter(field => field.ignored || field.destinationType === 'ignored').length
     }
   }, [importData])
+  const activeImportedCustomFields = useMemo(() => getImportedActiveCustomFields(importedEditorCustomFields), [importedEditorCustomFields])
   const selectedFieldRouteContext = useMemo<ImportedSelectedFieldRouteContext | null>(() => {
     if (fieldEditor) {
       return {
@@ -13107,9 +13156,14 @@ const ImportedHtmlEditorPanel: React.FC<{
     }
 
     const draftDestinationType = selectedFieldRouteDraft.destinationType
+    const selectedExistingCustomField = draftDestinationType !== 'standard' && draftDestinationType !== 'ignored'
+      ? findImportedCustomFieldDefinitionForDraft(activeImportedCustomFields, selectedFieldRouteDraft)
+      : null
     const destinationKey = draftDestinationType === 'standard'
       ? selectedFieldRouteDraft.destinationKey
-      : normalizeImportedDestinationKey(selectedFieldRouteDraft.destinationKey, getImportedFieldRouteDefaultKey(selectedFieldRouteContext))
+      : selectedExistingCustomField
+        ? selectedExistingCustomField.fieldKey || selectedExistingCustomField.key
+        : normalizeImportedDestinationKey(selectedFieldRouteDraft.destinationKey, getImportedFieldRouteDefaultKey(selectedFieldRouteContext))
 
     if (draftDestinationType !== 'ignored' && !destinationKey) {
       setContentError('Elige a dónde se guarda este campo.')
@@ -13180,7 +13234,12 @@ const ImportedHtmlEditorPanel: React.FC<{
           ignored: false,
           destinationKey: destinationKey || inferImportedStandardKey(currentField)
         }
-        : {
+        : selectedExistingCustomField
+          ? {
+            ...currentField,
+            ...buildExistingImportedCustomFieldPatch(selectedExistingCustomField)
+          }
+          : {
           ...currentField,
           ...clearImportedCustomFieldPatch,
           destinationType: 'new_custom',
@@ -13211,6 +13270,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   }, [
     activeImportedPage?.id,
     activeImportedPage?.title,
+    activeImportedCustomFields,
     importData,
     onImportMappingUpdated,
     selectedFieldRouteContext,
@@ -14437,6 +14497,17 @@ const ImportedHtmlEditorPanel: React.FC<{
   const inlineVideoPreview: EmbedPreviewConfig = inlineEditor?.mode === 'video'
     ? resolveImportedVideoPreview(inlineEditor.value)
     : { kind: 'empty' }
+  const selectedRouteCustomField = selectedFieldRouteDraft && selectedFieldRouteDraft.destinationType !== 'standard' && selectedFieldRouteDraft.destinationType !== 'ignored'
+    ? findImportedCustomFieldDefinitionForDraft(activeImportedCustomFields, selectedFieldRouteDraft)
+    : null
+  const selectedRouteCustomFieldId = selectedFieldRouteDraft?.customFieldDefinitionId || selectedRouteCustomField?.definitionId || ''
+  const selectedFieldRouteNeedsCustomSelection = Boolean(
+    selectedFieldRouteDraft &&
+    selectedFieldRouteDraft.destinationType !== 'standard' &&
+    selectedFieldRouteDraft.destinationType !== 'ignored' &&
+    activeImportedCustomFields.length &&
+    !selectedRouteCustomField
+  )
   const selectedFieldRoutePanel = selectedFieldRouteContext && selectedFieldRouteDraft ? (
     <div className={styles.importedFieldRouteBox}>
       <div className={styles.importedFieldRouteHeader}>
@@ -14466,6 +14537,21 @@ const ImportedHtmlEditorPanel: React.FC<{
                 return {
                   destinationType: 'ignored',
                   destinationKey: current.destinationKey
+                }
+              }
+              const matchedCustomField = selectedFieldRouteMatch?.field
+                ? findImportedCustomFieldDefinition(activeImportedCustomFields, selectedFieldRouteMatch.field)
+                : null
+              const defaultCustomField = matchedCustomField || selectedRouteCustomField || activeImportedCustomFields[0]
+              if (defaultCustomField) {
+                return {
+                  destinationType: 'custom',
+                  destinationKey: defaultCustomField.fieldKey || defaultCustomField.key,
+                  customFieldDefinitionId: defaultCustomField.definitionId,
+                  customFieldKey: defaultCustomField.fieldKey || defaultCustomField.key,
+                  customFieldLabel: defaultCustomField.label || defaultCustomField.name || defaultCustomField.fieldKey || defaultCustomField.key,
+                  customFieldDataType: defaultCustomField.dataType || 'text',
+                  customFieldSyncTarget: defaultCustomField.syncTarget || 'local'
                 }
               }
               return {
@@ -14503,21 +14589,73 @@ const ImportedHtmlEditorPanel: React.FC<{
           Este campo no se guardará cuando el visitante envíe el formulario.
         </p>
       ) : (
-        <label className={styles.importedActionField}>
-          <span>Clave del campo personalizado</span>
-          <input
-            value={selectedFieldRouteDraft.destinationKey}
-            disabled={selectedFieldRouteSaving || saving || contentSaving}
-            placeholder="ej. presupuesto_estimado"
-            name="rstk-imported-field-route-custom-key"
-            {...importedEditorNoAutocompleteAttrs}
-            onChange={(event) => setSelectedFieldRouteDraft(current => current ? {
-              ...current,
-              destinationType: 'custom',
-              destinationKey: event.target.value
-            } : current)}
-          />
-        </label>
+        <>
+          <label className={styles.importedActionField}>
+            <span>Campo personalizado</span>
+            <CustomSelect
+              value={selectedRouteCustomFieldId}
+              disabled={selectedFieldRouteSaving || saving || contentSaving || !activeImportedCustomFields.length}
+              portal
+              onChange={(event) => {
+                const customField = activeImportedCustomFields.find(item => item.definitionId === event.target.value)
+                if (!customField) return
+                setSelectedFieldRouteDraft(current => current ? {
+                  ...current,
+                  destinationType: 'custom',
+                  destinationKey: customField.fieldKey || customField.key,
+                  customFieldDefinitionId: customField.definitionId,
+                  customFieldKey: customField.fieldKey || customField.key,
+                  customFieldLabel: customField.label || customField.name || customField.fieldKey || customField.key,
+                  customFieldDataType: customField.dataType || 'text',
+                  customFieldSyncTarget: customField.syncTarget || 'local'
+                } : current)
+              }}
+            >
+              <option value="" disabled>
+                {activeImportedCustomFields.length ? 'Elige un campo guardado' : 'No hay campos personalizados'}
+              </option>
+              {selectedRouteCustomFieldId && !selectedRouteCustomField && (
+                <option value={selectedRouteCustomFieldId}>{selectedFieldRouteDraft.customFieldLabel || selectedFieldRouteDraft.destinationKey || 'Campo guardado'}</option>
+              )}
+              {activeImportedCustomFields.map(customField => (
+                <option key={customField.definitionId} value={customField.definitionId}>
+                  {customField.label || customField.name || customField.fieldKey}
+                </option>
+              ))}
+            </CustomSelect>
+          </label>
+          {activeImportedCustomFields.length ? (
+            <p className={styles.importedFieldRouteHint}>
+              {selectedRouteCustomField
+                ? `Se guardará en ${selectedRouteCustomField.label || selectedRouteCustomField.name || selectedRouteCustomField.fieldKey}.`
+                : 'Elige el campo personalizado exacto donde se guardará esta respuesta.'}
+            </p>
+          ) : (
+            <p className={styles.importedFieldRouteHint}>
+              No hay campos personalizados guardados. Usa una clave nueva para esta respuesta.
+            </p>
+          )}
+          {!activeImportedCustomFields.length && (
+            <label className={styles.importedActionField}>
+              <span>Clave del campo personalizado</span>
+              <input
+                value={selectedFieldRouteDraft.destinationKey}
+                disabled={selectedFieldRouteSaving || saving || contentSaving}
+                placeholder="ej. presupuesto_estimado"
+                name="rstk-imported-field-route-custom-key"
+                {...importedEditorNoAutocompleteAttrs}
+                onChange={(event) => setSelectedFieldRouteDraft(current => current ? {
+                  ...current,
+                  destinationType: 'custom',
+                  destinationKey: event.target.value,
+                  customFieldDefinitionId: '',
+                  customFieldKey: event.target.value,
+                  customFieldLabel: ''
+                } : current)}
+              />
+            </label>
+          )}
+        </>
       )}
       <div className={styles.importedFieldRouteActions}>
         <Button
@@ -14533,7 +14671,7 @@ const ImportedHtmlEditorPanel: React.FC<{
           type="button"
           size="sm"
           onClick={() => void saveSelectedFieldRoute()}
-          disabled={selectedFieldRouteSaving || saving || contentSaving || (selectedFieldRouteDraft.destinationType !== 'ignored' && !selectedFieldRouteDraft.destinationKey.trim())}
+          disabled={selectedFieldRouteSaving || saving || contentSaving || selectedFieldRouteNeedsCustomSelection || (selectedFieldRouteDraft.destinationType !== 'ignored' && !selectedFieldRouteDraft.destinationKey.trim())}
           loading={selectedFieldRouteSaving}
         >
           <Save size={14} />
@@ -14626,6 +14764,7 @@ const ImportedHtmlEditorPanel: React.FC<{
           {codeElementFieldHasOptions && (
             <ImportedFieldOptionsEditor
               title={codeElementEditor.fieldInputType === 'checkbox' ? 'Opciones de checkbox' : 'Opciones del campo'}
+              selectionMode={codeElementEditor.fieldInputType === 'checkbox' ? 'multiple' : 'single'}
               options={codeElementEditor.options || []}
               targetPages={targetImportedPages}
               disabled={saving}
@@ -15486,6 +15625,7 @@ const ImportedHtmlEditorPanel: React.FC<{
             </div>
             <ImportedFieldOptionsEditor
               title="Opciones del grupo"
+              selectionMode={choiceEditor.selection.choiceInputType === 'checkbox' ? 'multiple' : 'single'}
               options={choiceEditor.options}
               targetPages={targetImportedPages}
               disabled={contentSaving}
@@ -15557,6 +15697,7 @@ const ImportedHtmlEditorPanel: React.FC<{
             {fieldEditorHasOptions && (
               <ImportedFieldOptionsEditor
                 title="Opciones del campo"
+                selectionMode={fieldEditor.selection.inputType === 'checkbox' ? 'multiple' : 'single'}
                 options={fieldEditor.options}
                 targetPages={targetImportedPages}
                 disabled={contentSaving}
@@ -16017,7 +16158,12 @@ const buildImportedSelectedFieldRouteDraft = (
       ? match.field.destinationKey || inferImportedStandardKey(match.field)
       : destinationType === 'custom'
         ? match.field.customFieldKey || match.field.destinationKey || getImportedFieldRouteDefaultKey(context)
-        : match.field.destinationKey || getImportedFieldRouteDefaultKey(context)
+        : match.field.destinationKey || getImportedFieldRouteDefaultKey(context),
+    customFieldDefinitionId: match.field.customFieldDefinitionId || '',
+    customFieldKey: match.field.customFieldKey || '',
+    customFieldLabel: match.field.customFieldLabel || '',
+    customFieldDataType: match.field.customFieldDataType || '',
+    customFieldSyncTarget: match.field.customFieldSyncTarget || ''
   }
 }
 
@@ -16027,6 +16173,18 @@ const findImportedCustomFieldDefinition = (
 ) => {
   const definitionId = field.customFieldDefinitionId || ''
   const customKey = normalizeImportedDestinationKey(field.customFieldKey || field.destinationKey || '', '')
+  return customFields.find(customField => (
+    (definitionId && customField.definitionId === definitionId) ||
+    (customKey && normalizeImportedDestinationKey(customField.fieldKey || customField.key, '') === customKey)
+  )) || null
+}
+
+const findImportedCustomFieldDefinitionForDraft = (
+  customFields: CustomFieldDefinition[],
+  draft: ImportedSelectedFieldRouteDraft
+) => {
+  const definitionId = draft.customFieldDefinitionId || ''
+  const customKey = normalizeImportedDestinationKey(draft.customFieldKey || draft.destinationKey || '', '')
   return customFields.find(customField => (
     (definitionId && customField.definitionId === definitionId) ||
     (customKey && normalizeImportedDestinationKey(customField.fieldKey || customField.key, '') === customKey)
